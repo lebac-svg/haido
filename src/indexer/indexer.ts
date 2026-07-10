@@ -5,7 +5,7 @@ import { toPosix } from '../core/paths.js';
 import type { IndexResult, SymbolDiff, SymbolInfo } from '../core/types.js';
 import { extractSymbols } from './extract.js';
 import { extractImports, loadTsPaths, resolveImport, type RawImport } from './imports.js';
-import { sha1 } from './normalize.js';
+import { hashNode, sha1 } from './normalize.js';
 import { EXT_TO_LANG, parseSource, type LangId } from './parser.js';
 
 export interface IndexOptions {
@@ -38,6 +38,7 @@ interface DiskFile {
 interface PendingFile {
   disk: DiskFile;
   contentHash: string;
+  normHash: string;
   symbols: SymbolInfo[];
   imports: RawImport[];
 }
@@ -75,8 +76,9 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
     const tree = await parseSource(file.lang, content);
     const symbols = extractSymbols(tree, file.lang, file.rel);
     const imports = extractImports(tree, file.lang);
+    const normHash = hashNode(tree.rootNode);
     tree.delete();
-    pending.push({ disk: file, contentHash, symbols, imports });
+    pending.push({ disk: file, contentHash, normHash, symbols, imports });
   }
   const deletedRows = dbFiles.filter((r) => !fileSet.has(r.path));
 
@@ -86,10 +88,10 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
   const stmt = {
     touchFile: db.prepare(`UPDATE files SET mtime = ?, size = ?, indexed_at = ? WHERE id = ?`),
     upsertFile: db.prepare(
-      `INSERT INTO files (path, lang, content_hash, mtime, size, indexed_at, deleted_at)
-       VALUES (@path, @lang, @hash, @mtime, @size, @now, NULL)
+      `INSERT INTO files (path, lang, content_hash, norm_hash, mtime, size, indexed_at, deleted_at)
+       VALUES (@path, @lang, @hash, @normHash, @mtime, @size, @now, NULL)
        ON CONFLICT(path) DO UPDATE SET
-         lang = @lang, content_hash = @hash, mtime = @mtime, size = @size,
+         lang = @lang, content_hash = @hash, norm_hash = @normHash, mtime = @mtime, size = @size,
          indexed_at = @now, deleted_at = NULL
        RETURNING id`,
     ),
@@ -135,6 +137,7 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
         path: p.disk.rel,
         lang: p.disk.lang,
         hash: p.contentHash,
+        normHash: p.normHash,
         mtime: p.disk.mtime,
         size: p.disk.size,
         now,

@@ -14,16 +14,17 @@ export default tseslint.config(
     },
   },
   {
-    // Probe/experiment scripts exist to print things
-    files: ['experiments/**'],
-    rules: { 'no-console': 'off' },
-  },
-  {
     rules: {
       // Bugs the type system does not catch on its own
       'no-console': ['warn', { allow: ['error', 'warn'] }],
       '@typescript-eslint/no-floating-promises': 'off', // enable when type-aware linting is turned on
       eqeqeq: ['error', 'smart'],
     },
+  },
+  {
+    // Probe/experiment scripts and the CLI exist to print things.
+    // Must stay AFTER the block above — later flat-config entries win.
+    files: ['experiments/**', 'src/cli.ts', 'src/cli/**'],
+    rules: { 'no-console': 'off' },
   },
 );

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS files (
   path         TEXT NOT NULL UNIQUE,   -- repo-relative POSIX
   lang         TEXT NOT NULL,
   content_hash TEXT NOT NULL,          -- sha1 of raw file bytes (rename detection)
+  norm_hash    TEXT NOT NULL,          -- sha1(normalize(whole file)) — file-anchor fingerprint
   mtime        INTEGER NOT NULL,
   size         INTEGER NOT NULL,
   indexed_at   INTEGER NOT NULL,

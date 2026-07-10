@@ -32,6 +32,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.6.0",
     "prettier": "^3.9.5",
+    "tsx": "^4.23.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.63.0",
     "vitest": "^4.1.10"
@@ -39,6 +40,7 @@
   "dependencies": {
     "@vscode/tree-sitter-wasm": "^0.3.1",
     "better-sqlite3": "^12.11.1",
+    "commander": "^15.0.0",
     "web-tree-sitter": "^0.26.10"
   }
 }
