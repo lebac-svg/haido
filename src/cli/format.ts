@@ -13,6 +13,11 @@ export function formatIndexSummary(s: IndexSummary): string {
   const lines = [
     `files: ${String(s.filesSeen)} seen, ${String(s.filesIndexed)} indexed, ${String(s.filesDeleted)} deleted · symbol diffs: ${String(s.symbolsChanged)}`,
   ];
+  if (s.coChange?.ok && s.coChange.pairsStored > 0) {
+    lines.push(
+      `co-change: ${String(s.coChange.pairsStored)} cặp file hay đổi cùng nhau (quét ${String(s.coChange.commitsScanned)} commit)`,
+    );
+  }
   for (const e of s.staleness.events) {
     const icon =
       e.event === 'drifted'

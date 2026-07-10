@@ -137,8 +137,7 @@ CREATE VIRTUAL TABLE memories_fts USING fts5(
   tokenize = 'unicode61 remove_diacritics 2'   -- thân thiện tiếng Việt
 );
 
-CREATE TABLE cochange_state ( key TEXT PRIMARY KEY, value TEXT );  -- last_mined_commit...
-CREATE TABLE meta ( key TEXT PRIMARY KEY, value TEXT );            -- schema_version...
+CREATE TABLE meta ( key TEXT PRIMARY KEY, value TEXT );  -- schema_version, cochange_last_run...
 ```
 
 Ghi chú thiết kế:

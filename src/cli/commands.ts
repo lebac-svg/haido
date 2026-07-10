@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import { openDb, type Db } from '../core/db.js';
 import { dbPath, ensureWorkspace, workspaceExists } from '../core/workspace.js';
+import { mineCoChange, type CoChangeResult } from '../git/cochange.js';
 import { indexRepo } from '../indexer/indexer.js';
 import { confirmMemory, moveAnchor, retireMemory } from '../memory/reanchor.js';
 import { reconcileAnchors, type StalenessReport } from '../memory/staleness.js';
@@ -22,6 +23,7 @@ export interface IndexSummary {
   filesDeleted: number;
   symbolsChanged: number;
   staleness: StalenessReport;
+  coChange?: CoChangeResult;
 }
 
 export function requireDb(root: string): Db {
@@ -53,12 +55,14 @@ export async function cmdIndex(root: string): Promise<IndexSummary> {
 async function runIndex(root: string, db: Db): Promise<IndexSummary> {
   const result = await indexRepo({ root, db });
   const staleness = reconcileAnchors(db);
+  const coChange = mineCoChange({ root, db });
   return {
     filesSeen: result.filesSeen,
     filesIndexed: result.filesIndexed,
     filesDeleted: result.filesDeleted,
     symbolsChanged: result.diffs.length,
     staleness,
+    coChange,
   };
 }
 

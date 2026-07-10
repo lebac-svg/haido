@@ -11,6 +11,6 @@ author: agent:claude
 
 # CLI dev chạy bằng tsx, KHÔNG chạy được `node src/cli.ts` trực tiếp
 
-Code dùng import kiểu NodeNext (`./x.js` trỏ tới file `.ts`); type-stripping native của Node KHÔNG rewrite `.js → .ts` nên `node src/cli.ts` fail resolve. Dev dùng `npm run cli -- <lệnh>` (tsx); phân phối thật cho user cần build `dist/` + bin (kế hoạch Sprint 4/packaging).
+Code dùng import kiểu NodeNext (`./x.js` trỏ tới file `.ts`); type-stripping native của Node KHÔNG rewrite `.js → .ts` nên `node src/cli.ts` fail resolve. Dev dùng `npm run cli -- <lệnh>` (tsx), hoặc `npm run build` rồi `node dist/cli.js` (bản phân phối thật — từ Sprint 4 đã có bin + files trong package.json, cài dev vào agent bằng `haido install claude-code --command node <abs dist/cli.js>`).
 
 **Why:** ai (kể cả agent phiên sau) thử `node src/cli.ts` sẽ gặp lỗi resolve khó hiểu và tưởng CLI hỏng — trong khi chỉ là chọn sai runner.

@@ -17,6 +17,8 @@ export interface RecallRequest {
   budgetTokens?: number;
   limit?: number;
   now?: number;
+  /** Memory ids to skip entirely (hook session dedup). */
+  excludeIds?: string[];
 }
 
 export interface ScoredHit {
@@ -136,8 +138,10 @@ export function recall(db: Db, req: RecallRequest): RecallResult {
   const minRank = ranks.length > 0 ? Math.min(...ranks) : 0;
   const maxRank = ranks.length > 0 ? Math.max(...ranks) : 0;
 
+  const excluded = new Set(req.excludeIds ?? []);
   const scored: ScoredHit[] = [];
   for (const [id, c] of cands) {
+    if (excluded.has(id)) continue;
     const memory = getMemory(db, id);
     if (!memory || memory.status === 'retired') continue;
     const bm =

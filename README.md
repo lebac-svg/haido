@@ -27,7 +27,7 @@ Các công cụ hiện có giải được **một nửa** bài toán:
 
 ## Trạng thái
 
-🚧 **Giai đoạn spec — các quyết định nền tảng đã chốt 10/07/2026, chưa có code.** Khi open-source, docs chính sẽ chuyển sang tiếng Anh (bản Việt song song tại `docs/vi/`).
+✅ **Lõi MVP chạy được (10/07/2026):** indexer TS/Python + memory neo hash + staleness engine + recall xếp hạng + MCP server 6 tools + hooks auto-inject + installer + co-change + watch — 65 test xanh, đã verify sống trong phiên Claude Code thật (cả MCP lẫn hooks). Còn lại trước v0.1 public: `export/import --pack` (markdown pack), dogfood trên dự án thật, publish npm. Khi open-source, docs chính sẽ chuyển sang tiếng Anh (bản Việt song song tại `docs/vi/`).
 
 | Tài liệu | Nội dung |
 |---|---|
