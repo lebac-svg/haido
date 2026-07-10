@@ -1,0 +1,18 @@
+# haido.toml — cấu hình cho repo này (commit được, đi theo dự án)
+# Bỏ dấu # để kích hoạt. Mọi giá trị vắng mặt dùng mặc định.
+
+[index]
+# exclude = ["ds-bundle/**", "generated/**"]   # loại thêm ngoài các thư mục mặc định
+# include = ["src/**", "docs/**"]              # nếu đặt: CHỈ index các glob này
+# max_file_kb = 1500
+# purge_deleted_days = 30
+
+[cochange]
+# max_commits = 2000
+# max_files_per_commit = 30
+# min_together = 3
+# min_confidence = 0.3
+
+[recall]
+# budget_tokens = 800            # ngân sách token mỗi lần hook tiêm theo file
+# overview_budget_tokens = 1500  # ngân sách cho bản đồ đầu phiên

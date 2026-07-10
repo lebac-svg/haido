@@ -299,7 +299,7 @@ haido import --pack <dir>  # nhập + re-anchor theo qname/hash
 haido doctor               # git? node? grammar? db schema? hooks đã cài?
 ```
 
-Config `haido.toml`: `include`/`exclude` globs, ngưỡng co-change, budget mặc định, giới hạn commit mine.
+Config `haido.toml` (✅ implement 11/07/2026 — `src/core/config.ts`, TOML subset tự parse không dependency): `include`/`exclude` globs (kèm prune thư mục khi an toàn), `max_file_kb`, `purge_deleted_days` (dọn soft-delete cũ), tham số co-change, budget recall/overview cho hooks. `haido init` sinh file mẫu; file hỏng → âm thầm dùng mặc định (hook không được chết), `haido doctor` báo lỗi parse.
 
 ## 10. Markdown memory pack (format mở)
 

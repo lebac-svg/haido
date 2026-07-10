@@ -89,6 +89,34 @@ describe('indexRepo on ts-mini', () => {
     expect(after.norm_hash).toBe(row.norm_hash);
   });
 
+  it('haido.toml exclude globs keep junk out of the index', async () => {
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(path.join(tmp, 'gen'));
+    writeFileSync(path.join(tmp, 'gen', 'junk.ts'), 'export const j = 1;');
+    writeFileSync(path.join(tmp, 'haido.toml'), '[index]\nexclude = ["gen/**"]\n');
+    const r = await indexRepo({ root: tmp, db });
+    expect(r.diffs.map((d) => d.qname)).not.toContain('gen/junk.ts#j');
+    const row = db.prepare(`SELECT id FROM files WHERE path = 'gen/junk.ts'`).get();
+    expect(row).toBeUndefined();
+  });
+
+  it('purges soft-deleted rows after the configured window', async () => {
+    const t0 = Date.now();
+    await indexRepo({ root: tmp, db, now: () => t0 });
+    rmSync(path.join(tmp, 'src', 'utils.ts'));
+    await indexRepo({ root: tmp, db, now: () => t0 + 1000 }); // soft delete
+    const softDeleted = db
+      .prepare(`SELECT count(*) AS c FROM files WHERE deleted_at IS NOT NULL`)
+      .get() as { c: number };
+    expect(softDeleted.c).toBe(1);
+
+    await indexRepo({ root: tmp, db, now: () => t0 + 31 * 86_400_000 }); // 31 days later
+    const after = db
+      .prepare(`SELECT count(*) AS c FROM files WHERE deleted_at IS NOT NULL`)
+      .get() as { c: number };
+    expect(after.c).toBe(0); // purged
+  });
+
   it('formatting-only edits reindex the file but produce ZERO diffs', async () => {
     await indexRepo({ root: tmp, db });
     const utilsPath = path.join(tmp, 'src', 'utils.ts');

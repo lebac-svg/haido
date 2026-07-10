@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { loadConfig } from '../core/config.js';
 import type { Db } from '../core/db.js';
 
 /**
@@ -27,10 +28,11 @@ export interface CoChangeResult {
 
 export function mineCoChange(o: CoChangeOptions): CoChangeResult {
   const { db } = o;
-  const maxCommits = o.maxCommits ?? 2000;
-  const maxFiles = o.maxFilesPerCommit ?? 30;
-  const minTogether = o.minTogether ?? 3;
-  const minConfidence = o.minConfidence ?? 0.3;
+  const cfg = loadConfig(o.root).config.cochange;
+  const maxCommits = o.maxCommits ?? cfg.maxCommits;
+  const maxFiles = o.maxFilesPerCommit ?? cfg.maxFilesPerCommit;
+  const minTogether = o.minTogether ?? cfg.minTogether;
+  const minConfidence = o.minConfidence ?? cfg.minConfidence;
 
   const git = spawnSync(
     'git',

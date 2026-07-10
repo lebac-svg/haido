@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { loadConfig, makePathFilter, type PathFilter } from '../core/config.js';
 import type { Db } from '../core/db.js';
 import { toPosix } from '../core/paths.js';
 import type { IndexResult, SymbolDiff, SymbolInfo } from '../core/types.js';
@@ -55,8 +56,9 @@ interface PendingFile {
 export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
   const { db, root } = opts;
   const now = opts.now ? opts.now() : Date.now();
+  const { config } = loadConfig(root);
 
-  const disk = scanDisk(root);
+  const disk = scanDisk(root, makePathFilter(config), config.index.maxFileKb * 1024);
   const fileSet = new Set(disk.map((f) => f.rel));
   const dbFiles = db
     .prepare(`SELECT id, path, mtime, size, content_hash FROM files WHERE deleted_at IS NULL`)
@@ -209,6 +211,13 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
       stmt.clearEdgesTouching.run(r.id, r.id);
     }
 
+    // Purge long-gone soft-deleted rows (kept for a window so reanchor can correlate)
+    if (config.index.purgeDeletedDays > 0) {
+      const cutoff = now - config.index.purgeDeletedDays * 86_400_000;
+      db.prepare(`DELETE FROM symbols WHERE deleted_at IS NOT NULL AND deleted_at < ?`).run(cutoff);
+      db.prepare(`DELETE FROM files WHERE deleted_at IS NOT NULL AND deleted_at < ?`).run(cutoff);
+    }
+
     // Import edges for (re)indexed files. Note (v0.1): an unchanged importer does not gain
     // an edge when its target appears later — documented limitation, fixed by full reindex.
     for (const p of pending) {
@@ -233,14 +242,16 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
   };
 }
 
-function scanDisk(root: string): DiskFile[] {
+function scanDisk(root: string, filter: PathFilter, maxBytes = MAX_FILE_BYTES): DiskFile[] {
   const out: DiskFile[] = [];
   const walk = (absDir: string, relDir: string): void => {
     for (const entry of readdirSync(absDir, { withFileTypes: true })) {
       const name = entry.name;
       if (entry.isDirectory()) {
         if (name.startsWith('.') || EXCLUDED_DIRS.has(name)) continue;
-        walk(path.join(absDir, name), relDir === '' ? name : `${relDir}/${name}`);
+        const relSub = relDir === '' ? name : `${relDir}/${name}`;
+        if (filter.pruneDir(relSub)) continue;
+        walk(path.join(absDir, name), relSub);
         continue;
       }
       if (!entry.isFile()) continue;
@@ -250,9 +261,10 @@ function scanDisk(root: string): DiskFile[] {
       if (!lang) continue;
       if (lang === 'text' && (TEXT_EXCLUDED_FILES.has(name) || name.endsWith('.lock'))) continue;
       if (name.endsWith('.d.ts') || name.includes('.min.')) continue;
+      if (!filter.file(relDir === '' ? name : `${relDir}/${name}`)) continue;
       const abs = path.join(absDir, name);
       const st = statSync(abs);
-      if (st.size > MAX_FILE_BYTES) continue;
+      if (st.size > maxBytes) continue;
       out.push({
         abs,
         rel: toPosix(relDir === '' ? name : `${relDir}/${name}`),

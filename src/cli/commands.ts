@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { configPath, loadConfig, STARTER_TOML } from '../core/config.js';
 import { openDb, type Db } from '../core/db.js';
 import { dbPath, ensureWorkspace, haidoDir, workspaceExists } from '../core/workspace.js';
 import { buildVizHtml } from '../viz/html.js';
@@ -33,6 +34,7 @@ export interface IndexSummary {
   symbolsChanged: number;
   staleness: StalenessReport;
   coChange?: CoChangeResult;
+  wroteConfig?: boolean;
 }
 
 export function requireDb(root: string): Db {
@@ -44,9 +46,14 @@ export function requireDb(root: string): Db {
 
 export async function cmdInit(root: string): Promise<IndexSummary> {
   ensureWorkspace(root);
+  let wroteConfig = false;
+  if (!existsSync(configPath(root))) {
+    writeFileSync(configPath(root), STARTER_TOML);
+    wroteConfig = true;
+  }
   const db = openDb(dbPath(root));
   try {
-    return await runIndex(root, db);
+    return { ...(await runIndex(root, db)), wroteConfig };
   } finally {
     db.close();
   }
@@ -251,15 +258,20 @@ export interface DoctorReport {
   node: string;
   git: string | null;
   workspace: boolean;
+  config: 'file' | 'defaults';
+  configError?: string;
   counts: { files: number; symbols: number; memories: number; needsReview: number } | null;
 }
 
 export function cmdDoctor(root: string): DoctorReport {
   const git = spawnSync('git', ['--version'], { encoding: 'utf8' });
+  const loaded = loadConfig(root);
   const report: DoctorReport = {
     node: process.versions.node,
     git: git.status === 0 ? git.stdout.trim() : null,
     workspace: workspaceExists(root),
+    config: loaded.source,
+    ...(loaded.error !== undefined ? { configError: loaded.error } : {}),
     counts: null,
   };
   if (report.workspace) {

@@ -1,5 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { loadConfig } from '../../core/config.js';
 import { openDb } from '../../core/db.js';
 import { toRepoRelative } from '../../core/paths.js';
 import { dbPath, haidoDir, workspaceExists } from '../../core/workspace.js';
@@ -39,6 +40,7 @@ export async function runHook(
     if (!workspaceExists(root)) return null; // not a haido project — stay silent
     const payload = parsePayload(stdinRaw);
     const sessionId = payload.session_id ?? 'no-session';
+    const { config } = loadConfig(root);
     const db = openDb(dbPath(root));
     try {
       if (kind === 'session-start') {
@@ -48,7 +50,10 @@ export async function runHook(
         if (state.overviewDone) return null;
         state.overviewDone = true;
         saveState(root, sessionId, state);
-        return out('SessionStart', mapOverview(db, { budgetTokens: 1500 }));
+        return out(
+          'SessionStart',
+          mapOverview(db, { budgetTokens: config.recall.overviewBudgetTokens }),
+        );
       }
 
       const fileAbs = payload.tool_input?.file_path;
@@ -76,7 +81,11 @@ export async function runHook(
       }
 
       const state = loadState(root, sessionId);
-      const result = recall(db, { file: rel, budgetTokens: 800, excludeIds: state.injected });
+      const result = recall(db, {
+        file: rel,
+        budgetTokens: config.recall.budgetTokens,
+        excludeIds: state.injected,
+      });
       if (result.hits.length === 0 && warnings.length === 0) return null;
       if (result.hits.length > 0) {
         state.injected.push(...result.hits.map((h) => h.memory.id));

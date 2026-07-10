@@ -44,6 +44,8 @@ program
   .action(async () => {
     const summary = await cmdInit(root());
     console.log(formatIndexSummary(summary));
+    if (summary.wroteConfig)
+      console.log('wrote haido.toml (starter — mở ra chỉnh include/exclude)');
     console.log("tip: add '.haido/' to your .gitignore — knowledge travels via the memory pack");
     console.log("next: 'haido install claude-code' to wire hooks + MCP into Claude Code");
   });
@@ -264,6 +266,9 @@ program
     console.log(`git:  ${r.git ?? 'NOT FOUND (co-change mining will be disabled)'}`);
     console.log(
       `workspace: ${r.workspace ? 'ok (.haido/haido.db)' : "missing — run 'haido init'"}`,
+    );
+    console.log(
+      `config: ${r.config === 'file' ? 'haido.toml' : 'defaults'}${r.configError ? ` (LỖI PARSE: ${r.configError})` : ''}`,
     );
     if (r.counts) {
       console.log(

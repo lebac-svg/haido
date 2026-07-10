@@ -51,6 +51,8 @@ node <haido>/dist/cli.js install claude-code --command node <haido>/dist/cli.js
 
 # Agent dùng qua MCP: remember / recall / find_related / map_overview / stale_memories / reanchor
 # CLI cho người:  index [--watch] · recall · related · overview · stale · reanchor · doctor
+node <haido>/dist/cli.js viz --open   # bản đồ tri thức 2D (1 file HTML tự chứa)
+# haido.toml (init tự sinh file mẫu): include/exclude glob, tham số co-change, budget hooks
 ```
 
 Sau khi publish npm, toàn bộ rút gọn thành `npx haido init && npx haido install claude-code`. Bản đồ 2D `haido viz` thuộc v0.2.
