@@ -8,3 +8,6 @@ coverage/
 
 # local-only agent settings
 .claude/settings.local.json
+
+# probe runtime output (schema excerpts live in FINDINGS.md)
+experiments/hooks-probe/log.jsonl

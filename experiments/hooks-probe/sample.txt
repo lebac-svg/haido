@@ -1,0 +1,2 @@
+This is a plain sample file for the PostToolUse(Read) hook probe.
+It intentionally contains no canary token — the token must arrive via hook context, not file content.

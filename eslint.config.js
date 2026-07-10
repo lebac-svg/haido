@@ -7,6 +7,13 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // Plain JS/MJS files (scripts, probes) run on Node — declare its globals
+    files: ['**/*.js', '**/*.mjs'],
+    languageOptions: {
+      globals: { process: 'readonly', console: 'readonly', Buffer: 'readonly' },
+    },
+  },
+  {
     rules: {
       // Bugs the type system does not catch on its own
       'no-console': ['warn', { allow: ['error', 'warn'] }],
