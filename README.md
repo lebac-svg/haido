@@ -40,20 +40,20 @@ Các công cụ hiện có giải được **một nửa** bài toán:
 
 Bộ khung kỹ thuật đã dựng và **xanh toàn bộ gate** (`npm run check`: TypeScript strict + eslint + prettier + vitest; CI GitHub Actions ma trận Windows/Linux × Node 20/22).
 
-## Hình dung khi hoàn thành
+## Dùng thử (bản build local — chưa publish npm)
 
 ```bash
-npx haido init          # tạo .haido/, index repo (TS + Python), đào git log
-npx haido serve                    # MCP server cho agent
-npx haido install claude-code      # đăng ký MCP + hooks vào Claude Code
-npx haido install claude-desktop   # (tuỳ chọn) thêm vào Claude Desktop — recall khi được hỏi
+npm install && npm run build       # trong repo haido
+cd <dự án của bạn>
+node <haido>/dist/cli.js init
+node <haido>/dist/cli.js install claude-code --command node <haido>/dist/cli.js
+# mở phiên Claude Code mới trong dự án → agent tự nhận bản đồ + trí nhớ qua hooks
 
-# Agent tự dùng qua MCP:
-#   remember / recall / find_related / map_overview / stale_memories / reanchor
-
-npx haido stale         # hàng đợi ghi chú cần review sau khi code đổi
-npx haido viz           # (v0.2) bản đồ 2D — mở file HTML, không cần server
+# Agent dùng qua MCP: remember / recall / find_related / map_overview / stale_memories / reanchor
+# CLI cho người:  index [--watch] · recall · related · overview · stale · reanchor · doctor
 ```
+
+Sau khi publish npm, toàn bộ rút gọn thành `npx haido init && npx haido install claude-code`. Bản đồ 2D `haido viz` thuộc v0.2.
 
 ## License
 
