@@ -62,8 +62,8 @@ haido/
 │  ├─ mcp/         # server.ts, tools/*.ts
 │  ├─ integrations/# claude-code/ (hook runner + installer)
 │  └─ cli.ts
-├─ grammars/       # *.wasm (ts, tsx, js, python)
 └─ test/fixtures/  # golden repos nhỏ (ts + py)
+   (grammar .wasm lấy từ package @vscode/tree-sitter-wasm — không vendor trong repo)
 ```
 
 ## 2. Data model (SQLite)
@@ -177,6 +177,8 @@ normalize(node):
 ```
 
 → Format code (prettier/black), đổi comment: **hash không đổi** → không stale oan. Đổi bất kỳ token code nào: hash đổi → stale đúng. Đổi tên biến cục bộ vẫn stale (chấp nhận: đổi tên *là* thay đổi ngữ nghĩa tiềm tàng).
+
+**Hash của symbol chứa symbol khác (class):** node class bao trùm body các method, nên sửa ruột một method sẽ đổi hash của cả method lẫn class → anchor trên class cũng vào diện review. Chủ đích v0.1 ("thà nhạy còn hơn câm", xem §15); nếu dogfood cho thấy quá ồn thì v0.2 chuyển class sang *shape-hash* (chỉ chữ ký + tên member, bỏ body).
 
 **Incremental:** fast-path so `mtime+size`; nghi ngờ thì so `content_hash` file. File mới có `content_hash` trùng file vừa `deleted` → **rename**: cập nhật `path`, giữ symbol, anchor chuyển `moved` và tự re-anchor (không làm phiền người dùng).
 

@@ -3,7 +3,7 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/', 'coverage/', 'node_modules/', '.haido/'] },
+  { ignores: ['dist/', 'coverage/', 'node_modules/', '.haido/', 'test/fixtures/'] },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -12,6 +12,11 @@ export default tseslint.config(
     languageOptions: {
       globals: { process: 'readonly', console: 'readonly', Buffer: 'readonly' },
     },
+  },
+  {
+    // Probe/experiment scripts exist to print things
+    files: ['experiments/**'],
+    rules: { 'no-console': 'off' },
   },
   {
     rules: {
