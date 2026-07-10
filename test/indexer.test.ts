@@ -27,8 +27,8 @@ describe('indexRepo on ts-mini', () => {
 
   it('cold index finds all files, symbols, and import edges', async () => {
     const r = await indexRepo({ root: tmp, db });
-    expect(r.filesSeen).toBe(3);
-    expect(r.filesIndexed).toBe(3);
+    expect(r.filesSeen).toBe(4); // 3 code files + tsconfig.json (text, file-level)
+    expect(r.filesIndexed).toBe(4);
     expect(r.diffs.filter((d) => d.change === 'added')).toHaveLength(9);
 
     const edges = db
@@ -66,6 +66,27 @@ describe('indexRepo on ts-mini', () => {
       ['src/board.ts#Board', 'changed'],
       ['src/board.ts#Board.move', 'changed'],
     ]);
+  });
+
+  it('indexes text knowledge files (md) at file level: no symbols, CRLF-insensitive hash', async () => {
+    await indexRepo({ root: tmp, db });
+    writeFileSync(path.join(tmp, 'NOTES.md'), '# Notes\n\nDecisions live here.\n');
+    const r = await indexRepo({ root: tmp, db });
+    expect(r.filesIndexed).toBe(1);
+    expect(r.diffs).toEqual([]); // no symbols in text files
+    const row = db.prepare(`SELECT lang, norm_hash FROM files WHERE path = 'NOTES.md'`).get() as {
+      lang: string;
+      norm_hash: string;
+    };
+    expect(row.lang).toBe('text');
+
+    // CRLF checkout must not change the knowledge fingerprint
+    writeFileSync(path.join(tmp, 'NOTES.md'), '# Notes\r\n\r\nDecisions live here.\r\n');
+    await indexRepo({ root: tmp, db });
+    const after = db.prepare(`SELECT norm_hash FROM files WHERE path = 'NOTES.md'`).get() as {
+      norm_hash: string;
+    };
+    expect(after.norm_hash).toBe(row.norm_hash);
   });
 
   it('formatting-only edits reindex the file but produce ZERO diffs', async () => {

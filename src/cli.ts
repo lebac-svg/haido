@@ -1,7 +1,11 @@
 #!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
 import { Command } from 'commander';
 import {
   cmdDoctor,
+  cmdExportPack,
+  cmdExportViz,
+  cmdImportPack,
   cmdIndex,
   cmdInit,
   cmdOverview,
@@ -201,6 +205,41 @@ program
         to: opts['to'] as string | undefined,
       }),
     );
+  });
+
+program
+  .command('export')
+  .description('export memories to a git-committable markdown pack, or a viz JSON snapshot')
+  .option('--pack <dir>', 'write one .md per memory (knowledge travels with the repo)')
+  .option('--viz <file>', 'write the map+memory JSON snapshot (input for haido viz, v0.2)')
+  .action((opts: Record<string, unknown>) => {
+    const pack = opts['pack'] as string | undefined;
+    const viz = opts['viz'] as string | undefined;
+    if (!pack && !viz) throw new Error('choose --pack <dir> and/or --viz <file>');
+    if (pack) {
+      const r = cmdExportPack(root(), pack);
+      console.log(`exported ${String(r.written)} memories to ${r.dir}`);
+      for (const o of r.orphans) {
+        console.warn(`orphan (id no longer exists, not deleted): ${o}`);
+      }
+    }
+    if (viz) {
+      writeFileSync(viz, cmdExportViz(root()));
+      console.log(`wrote viz snapshot to ${viz}`);
+    }
+  });
+
+program
+  .command('import')
+  .description('import a markdown memory pack (new machine / after git pull)')
+  .requiredOption('--pack <dir>', 'directory of memory .md files')
+  .action((opts: Record<string, unknown>) => {
+    const r = cmdImportPack(root(), opts['pack'] as string);
+    console.log(
+      `imported ${String(r.imported)}, updated ${String(r.updated)}, unchanged ${String(r.unchanged)}`,
+    );
+    for (const s of r.skipped) console.warn(`skipped ${s.file}: ${s.reason}`);
+    console.log("anchors reconciled — run 'haido stale' to review anything that drifted");
   });
 
 program

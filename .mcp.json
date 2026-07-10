@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "haido": {
+      "command": "node",
+      "args": [
+        "dist/cli.js",
+        "serve"
+      ]
+    }
+  }
+}

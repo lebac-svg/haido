@@ -27,10 +27,18 @@ const EXCLUDED_DIRS = new Set([
 ]);
 const MAX_FILE_BYTES = 1_500_000;
 
+/**
+ * Plain-text knowledge files: indexed at FILE level only (no symbols, no imports)
+ * so memories can anchor to specs/configs too. Discovered by self-hosting dogfood:
+ * the bootstrap pack anchors to docs/*.md, which a code-only index reported missing.
+ */
+const TEXT_EXTS = new Set(['.md', '.markdown', '.txt', '.json', '.yaml', '.yml', '.toml']);
+const TEXT_EXCLUDED_FILES = new Set(['package-lock.json']);
+
 interface DiskFile {
   abs: string;
   rel: string;
-  lang: LangId;
+  lang: LangId | 'text';
   mtime: number;
   size: number;
 }
@@ -71,6 +79,12 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
     const contentHash = sha1(content);
     if (row && row.content_hash === contentHash) {
       touchedOnly.push({ id: row.id, mtime: file.mtime, size: file.size });
+      continue;
+    }
+    if (file.lang === 'text') {
+      // knowledge files: fingerprint = content with line endings normalized (git-style)
+      const normHash = sha1(content.replaceAll('\r\n', '\n'));
+      pending.push({ disk: file, contentHash, normHash, symbols: [], imports: [] });
       continue;
     }
     const tree = await parseSource(file.lang, content);
@@ -230,8 +244,11 @@ function scanDisk(root: string): DiskFile[] {
         continue;
       }
       if (!entry.isFile()) continue;
-      const lang = EXT_TO_LANG[path.extname(name)];
+      const ext = path.extname(name).toLowerCase();
+      const lang: LangId | 'text' | undefined =
+        EXT_TO_LANG[ext] ?? (TEXT_EXTS.has(ext) ? 'text' : undefined);
       if (!lang) continue;
+      if (lang === 'text' && (TEXT_EXCLUDED_FILES.has(name) || name.endsWith('.lock'))) continue;
       if (name.endsWith('.d.ts') || name.includes('.min.')) continue;
       const abs = path.join(absDir, name);
       const st = statSync(abs);
