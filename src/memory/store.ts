@@ -12,6 +12,13 @@ export const MEMORY_TYPES: readonly MemoryType[] = [
 
 export type AnchorTarget = { symbol: string } | { file: string };
 
+/** 'sym:<qname>' | 'file:<path>' | bare string (auto-detect: contains '#' => symbol). */
+export function parseAnchorSpec(spec: string): AnchorTarget {
+  if (spec.startsWith('sym:')) return { symbol: spec.slice(4) };
+  if (spec.startsWith('file:')) return { file: spec.slice(5) };
+  return spec.includes('#') ? { symbol: spec } : { file: spec };
+}
+
 export interface RememberInput {
   type: MemoryType;
   title: string;

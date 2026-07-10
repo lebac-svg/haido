@@ -4,13 +4,16 @@ import {
   cmdDoctor,
   cmdIndex,
   cmdInit,
+  cmdOverview,
   cmdReanchor,
   cmdRecall,
+  cmdRelated,
   cmdRemember,
   cmdStale,
 } from './cli/commands.js';
-import { formatIndexSummary, formatRecall, formatStale } from './cli/format.js';
+import { formatIndexSummary, formatStale } from './cli/format.js';
 import { MEMORY_TYPES, type MemoryType } from './memory/store.js';
+import { serveStdio } from './mcp/server.js';
 import { VERSION } from './version.js';
 
 const program = new Command();
@@ -35,6 +38,13 @@ program
   .description('re-index changed files and reconcile memory anchors')
   .action(async () => {
     console.log(formatIndexSummary(await cmdIndex(root())));
+  });
+
+program
+  .command('serve')
+  .description('run the MCP stdio server (plug into Claude Code / Claude Desktop)')
+  .action(async () => {
+    await serveStdio(root());
   });
 
 program
@@ -70,18 +80,34 @@ program
 
 program
   .command('recall [query]')
-  .description('list memories for a file/symbol/query')
+  .description('ranked memories for a file/symbol/query (token-budgeted)')
   .option('--file <path>', 'repo-relative file path')
   .option('--symbol <qname>', 'symbol qname (path#Name)')
-  .option('--limit <n>', 'max results', '10')
+  .option('--budget <tokens>', 'token budget', '800')
   .action((query: string | undefined, opts: Record<string, unknown>) => {
-    const hits = cmdRecall(root(), {
-      query,
-      file: opts['file'] as string | undefined,
-      symbol: opts['symbol'] as string | undefined,
-      limit: Number(opts['limit']),
+    const result = cmdRecall(root(), {
+      ...(query !== undefined ? { query } : {}),
+      ...(opts['file'] !== undefined ? { file: opts['file'] as string } : {}),
+      ...(opts['symbol'] !== undefined ? { symbol: opts['symbol'] as string } : {}),
+      budget: Number(opts['budget']),
     });
-    console.log(formatRecall(hits));
+    console.log(result.text);
+  });
+
+program
+  .command('related <target>')
+  .description('files most related to a file/symbol (imports, co-change, same dir)')
+  .option('--limit <n>', 'max results', '8')
+  .action((target: string, opts: Record<string, unknown>) => {
+    console.log(cmdRelated(root(), target, Number(opts['limit'])));
+  });
+
+program
+  .command('overview')
+  .description('project map + standing invariants (what a fresh session should read)')
+  .option('--budget <tokens>', 'token budget', '1500')
+  .action((opts: Record<string, unknown>) => {
+    console.log(cmdOverview(root(), Number(opts['budget'])));
   });
 
 program

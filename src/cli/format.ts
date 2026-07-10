@@ -1,5 +1,4 @@
 import type { AnchorRow, MemoryRow } from '../memory/store.js';
-import type { RecallHit } from '../recall/basic.js';
 import type { IndexSummary } from './commands.js';
 
 const TYPE_ICON: Record<string, string> = {
@@ -38,11 +37,6 @@ export function formatMemoryLine(m: MemoryRow & { anchors: AnchorRow[] }): strin
   const flag = m.status === 'needs_review' ? ' ⚠️(needs review — code changed)' : '';
   const anchors = m.anchors.map((a) => a.qname).join(', ');
   return `${icon} ${m.type.toUpperCase()}${flag} [${m.id}] ${anchors}\n   ${m.title} — ${m.body}\n   why: ${m.why}`;
-}
-
-export function formatRecall(hits: RecallHit[]): string {
-  if (hits.length === 0) return '(no memories here yet)';
-  return hits.map((h) => `${formatMemoryLine(h.memory)}\n   match: ${h.reason}`).join('\n');
 }
 
 export function formatStale(memories: Array<MemoryRow & { anchors: AnchorRow[] }>): string {

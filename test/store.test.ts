@@ -3,11 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseAnchorSpec } from '../src/cli/commands.js';
 import { openDb, type Db } from '../src/core/db.js';
 import { indexRepo } from '../src/indexer/indexer.js';
-import { remember } from '../src/memory/store.js';
-import { recallBasic } from '../src/recall/basic.js';
+import { parseAnchorSpec, remember } from '../src/memory/store.js';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 
@@ -83,30 +81,6 @@ describe('remember — hygiene enforcement (SPEC §9)', () => {
       anchors: [{ file: 'src/utils.ts' }],
     });
     expect(second.duplicates.map((d) => d.id)).toContain(first.id);
-  });
-});
-
-describe('recallBasic', () => {
-  it('exact anchor beats same-file, and text search works', () => {
-    const onMove = remember(db, { ...base, anchors: [{ symbol: 'src/board.ts#Board.move' }] });
-    const onFile = remember(db, {
-      ...base,
-      title: 'Board file convention',
-      body: 'Keep Board pure: no DOM access in this file.',
-      anchors: [{ file: 'src/board.ts' }],
-    });
-
-    const bySymbol = recallBasic(db, { symbol: 'src/board.ts#Board.move' });
-    expect(bySymbol[0]?.memory.id).toBe(onMove.id);
-    expect(bySymbol[0]?.reason).toBe('anchored');
-    expect(bySymbol.find((h) => h.memory.id === onFile.id)?.reason).toBe('same-file');
-
-    const byOtherSymbol = recallBasic(db, { symbol: 'src/board.ts#Board.undo' });
-    expect(byOtherSymbol.map((h) => h.reason)).toContain('same-file');
-
-    const byQuery = recallBasic(db, { query: 'integer cents money' });
-    expect(byQuery.length).toBeGreaterThan(0);
-    expect(byQuery[0]?.reason).toBe('text-match');
   });
 });
 

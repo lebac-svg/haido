@@ -7,12 +7,14 @@ import { confirmMemory, moveAnchor, retireMemory } from '../memory/reanchor.js';
 import { reconcileAnchors, type StalenessReport } from '../memory/staleness.js';
 import {
   listNeedsReview,
+  parseAnchorSpec,
   remember,
-  type AnchorTarget,
   type MemoryType,
   type RememberResult,
 } from '../memory/store.js';
-import { recallBasic, type RecallHit } from '../recall/basic.js';
+import { mapOverview } from '../recall/overview.js';
+import { recall, type RecallResult } from '../recall/rank.js';
+import { findRelated } from '../recall/related.js';
 
 export interface IndexSummary {
   filesSeen: number;
@@ -85,19 +87,41 @@ export function cmdRemember(root: string, opts: RememberOptions): RememberResult
   }
 }
 
-export function parseAnchorSpec(spec: string): AnchorTarget {
-  if (spec.startsWith('sym:')) return { symbol: spec.slice(4) };
-  if (spec.startsWith('file:')) return { file: spec.slice(5) };
-  return spec.includes('#') ? { symbol: spec } : { file: spec };
-}
-
 export function cmdRecall(
   root: string,
-  q: { symbol?: string; file?: string; query?: string; limit?: number },
-): RecallHit[] {
+  q: { symbol?: string; file?: string; query?: string; budget?: number },
+): RecallResult {
   const db = requireDb(root);
   try {
-    return recallBasic(db, q);
+    return recall(db, {
+      ...(q.symbol !== undefined ? { symbol: q.symbol } : {}),
+      ...(q.file !== undefined ? { file: q.file } : {}),
+      ...(q.query !== undefined ? { query: q.query } : {}),
+      ...(q.budget !== undefined ? { budgetTokens: q.budget } : {}),
+    });
+  } finally {
+    db.close();
+  }
+}
+
+export function cmdRelated(root: string, target: string, limit?: number): string {
+  const db = requireDb(root);
+  try {
+    const rows = findRelated(db, {
+      ...(target.includes('#') ? { symbol: target } : { file: target }),
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    if (rows.length === 0) return '(no related files found — is the path repo-relative?)';
+    return rows.map((r) => `- ${r.path} — ${r.reasons.join(', ')}`).join('\n');
+  } finally {
+    db.close();
+  }
+}
+
+export function cmdOverview(root: string, budget?: number): string {
+  const db = requireDb(root);
+  try {
+    return mapOverview(db, budget !== undefined ? { budgetTokens: budget } : {});
   } finally {
     db.close();
   }
