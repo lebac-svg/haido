@@ -1,7 +1,10 @@
 import { spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { openDb, type Db } from '../core/db.js';
-import { dbPath, ensureWorkspace, workspaceExists } from '../core/workspace.js';
+import { dbPath, ensureWorkspace, haidoDir, workspaceExists } from '../core/workspace.js';
+import { buildVizHtml } from '../viz/html.js';
 import { mineCoChange, type CoChangeResult } from '../git/cochange.js';
 import { indexRepo } from '../indexer/indexer.js';
 import { confirmMemory, moveAnchor, retireMemory } from '../memory/reanchor.js';
@@ -193,10 +196,32 @@ export function cmdImportPack(root: string, dir: string): PackImportResult {
   }
 }
 
-/** JSON snapshot for the v0.2 visualization (stable from v0.1 as promised in SPEC §6). */
+/** `haido viz` — render the interactive map HTML (default: .haido/map.html). */
+export function cmdViz(root: string, out?: string): string {
+  const db = requireDb(root);
+  try {
+    const html = buildVizHtml(buildVizJson(db), path.basename(root));
+    const file = out ?? path.join(haidoDir(root), 'map.html');
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, html);
+    return file;
+  } finally {
+    db.close();
+  }
+}
+
+/** JSON snapshot for the visualization (stable from v0.1 as promised in SPEC §6). */
 export function cmdExportViz(root: string): string {
   const db = requireDb(root);
   try {
+    return buildVizJson(db);
+  } finally {
+    db.close();
+  }
+}
+
+function buildVizJson(db: Db): string {
+  {
     const files = db
       .prepare(
         `SELECT f.path, f.lang, count(s.id) AS symbols FROM files f
@@ -219,8 +244,6 @@ export function cmdExportViz(root: string): string {
       )
       .all();
     return JSON.stringify({ version: 1, files, memories, edges }, null, 2);
-  } finally {
-    db.close();
   }
 }
 

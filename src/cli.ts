@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { Command } from 'commander';
 import {
@@ -14,6 +15,7 @@ import {
   cmdRelated,
   cmdRemember,
   cmdStale,
+  cmdViz,
   requireDb,
 } from './cli/commands.js';
 import { formatIndexSummary, formatStale } from './cli/format.js';
@@ -208,6 +210,17 @@ program
   });
 
 program
+  .command('viz')
+  .description('interactive 2D map: files, links, memories & freshness (open in a browser)')
+  .option('--out <file>', 'where to write the HTML (default: .haido/map.html)')
+  .option('--open', 'open it in the default browser right away')
+  .action((opts: Record<string, unknown>) => {
+    const file = cmdViz(root(), opts['out'] as string | undefined);
+    console.log(`wrote ${file}`);
+    if (opts['open']) openInBrowser(file);
+  });
+
+program
   .command('export')
   .description('export memories to a git-committable markdown pack, or a viz JSON snapshot')
   .option('--pack <dir>', 'write one .md per memory (knowledge travels with the repo)')
@@ -258,6 +271,16 @@ program
       );
     }
   });
+
+function openInBrowser(file: string): void {
+  if (process.platform === 'win32') {
+    spawn('cmd', ['/c', 'start', '', file], { detached: true, stdio: 'ignore' }).unref();
+  } else if (process.platform === 'darwin') {
+    spawn('open', [file], { detached: true, stdio: 'ignore' }).unref();
+  } else {
+    spawn('xdg-open', [file], { detached: true, stdio: 'ignore' }).unref();
+  }
+}
 
 async function readStdin(timeoutMs = 3000): Promise<string> {
   if (process.stdin.isTTY) return '';
