@@ -1,0 +1,8 @@
+# Docs are hand-formatted (Vietnamese prose, wide tables) — do not churn them
+docs/
+README.md
+AGENTS.md
+coverage/
+dist/
+.haido/
+package-lock.json

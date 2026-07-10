@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# haido's own database (knowledge travels via docs/memory/ pack instead)
+.haido/
+
+# local-only agent settings
+.claude/settings.local.json

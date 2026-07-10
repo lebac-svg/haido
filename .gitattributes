@@ -1,0 +1,5 @@
+# Normalize to LF in-repo (Windows dev machines welcome, CRLF stays out of git)
+* text=auto eol=lf
+*.wasm binary
+*.png binary
+*.mp4 binary
