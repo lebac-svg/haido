@@ -1,14 +1,19 @@
 /**
  * `haido viz` — the human window (SPEC US6): one self-contained dark HTML page,
- * zero dependencies, works from file://. Force-directed map of files; node color =
- * top-level directory (validated categorical palette, fixed order, >8 folds into
- * "Khác"); memory presence = white ring + count; needs-review = status-warning ring
- * plus an icon+label in the panel (status is never color-alone).
+ * zero dependencies, works from file://.
  *
- * Anti-hairball rules (user feedback 2026-07-11, m_boot_011): edges are AMBIENT
- * (faint) by default; hovering/clicking a node spotlights ONLY its incident edges
- * (with arrowheads showing import direction) and neighbors while everything else
- * recedes; each directory gets a soft territory hull so clusters read as regions.
+ * Two modes sharing one 3D force simulation:
+ *  - 2D (default, the READING view): z is spring-flattened to 0; directory
+ *    territory hulls; pan + node dragging.
+ *  - 3D (showcase, user request 2026-07-11): perspective projection on canvas,
+ *    drag = orbit, wheel = dolly, slow auto-rotate while idle; depth fades
+ *    distant marks. No hulls (occlusion), no node dragging.
+ *
+ * Anti-hairball rules (m_boot_011) apply in BOTH modes: edges are ambient by
+ * default; hover/click spotlights only the incident edges (arrowheads = import
+ * direction) while the rest recedes. Node color = top-level directory
+ * (validated categorical palette, fixed order, >8 folds into "Khác"); memory
+ * presence = white ring; needs-review = warning ring + icon+label in the panel.
  */
 export function buildVizHtml(dataJson: string, repoName: string): string {
   const safeJson = dataJson.replaceAll('<', '\\u003c');
@@ -51,7 +56,7 @@ const TEMPLATE = `<!doctype html>
   header label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
   header input[type="search"] {
     background: var(--page); border: 1px solid var(--hair); color: var(--ink);
-    border-radius: 6px; padding: 4px 8px; width: 200px; outline: none;
+    border-radius: 6px; padding: 4px 8px; width: 180px; outline: none;
   }
   header input[type="search"]:focus { border-color: var(--ink-3); }
   #legend { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
@@ -98,6 +103,8 @@ const TEMPLATE = `<!doctype html>
 <header>
   <h1>🧭 Hải Đồ — __REPO_NAME__</h1>
   <span class="stats" id="stats"></span>
+  <label><input type="checkbox" id="mode3d"> 🧊 3D</label>
+  <label id="rotWrap" style="opacity:.45"><input type="checkbox" id="autoRotate" checked disabled> tự xoay</label>
   <label><input type="checkbox" id="showImports" checked> import</label>
   <label><input type="checkbox" id="showCochange" checked> hay đổi cùng nhau</label>
   <label><input type="checkbox" id="allEdges"> hiện rõ mọi liên kết</label>
@@ -109,7 +116,7 @@ const TEMPLATE = `<!doctype html>
   <div id="map"><canvas id="canvas"></canvas><div id="tip"></div></div>
   <aside id="panel"></aside>
 </main>
-<footer><b style="color:var(--ink-2)">trỏ vào một node để soi liên kết của riêng nó</b> (mũi tên = chiều import) · click để ghim + xem ghi chú · kéo node/nền · lăn chuột zoom — sinh bởi <kbd>haido viz</kbd></footer>
+<footer id="hint"></footer>
 <script type="application/json" id="haido-data">"__HAIDO_DATA__"</script>
 <script>
 (function () {
@@ -121,8 +128,7 @@ const TEMPLATE = `<!doctype html>
 
   // ---- model ----
   function topDir(p) { var i = p.indexOf('/'); return i === -1 ? '(gốc)' : p.slice(0, i) + '/'; }
-  var memByPath = {};
-  var staleByPath = {};
+  var memByPath = {}, staleByPath = {};
   (DATA.memories || []).forEach(function (m) {
     var seen = {};
     (m.anchors || []).forEach(function (a) {
@@ -146,8 +152,9 @@ const TEMPLATE = `<!doctype html>
       mems: memByPath[f.path] || [], stale: !!staleByPath[f.path],
       color: dirColor[dir],
       r: Math.min(18, 4 + Math.sqrt(f.symbols || 0) * 1.6),
-      x: 0, y: 0, vx: 0, vy: 0, idx: i, pinned: false,
-      nbr: {}, deg: 0
+      x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, idx: i, pinned: false,
+      nbr: {}, deg: 0,
+      sx: 0, sy: 0, sr: 0, sdepth: 1, sOn: false
     };
   });
   var byId = {};
@@ -159,20 +166,25 @@ const TEMPLATE = `<!doctype html>
     e.a.deg++; e.b.deg++;
   });
 
-  // seed positions: cluster by directory around a circle
-  var W = 1200, H = 800;
+  // seed: directory centers on a sphere (golden spiral), members jittered around
+  var N = Math.max(1, dirs.length);
+  var dirCenter = {};
   dirs.forEach(function (d, i) {
-    var ang = (i / Math.max(1, dirs.length)) * Math.PI * 2;
-    var cx = Math.cos(ang) * 300, cy = Math.sin(ang) * 230;
-    var k = 0;
-    nodes.forEach(function (n) {
-      if (n.dir !== d) return;
-      var a2 = (k * 2.399963); k++;
-      var rr = 26 + Math.sqrt(k) * 16;
-      n.x = cx + Math.cos(a2) * rr; n.y = cy + Math.sin(a2) * rr;
-    });
+    var gy = N === 1 ? 0 : 1 - 2 * (i + 0.5) / N;
+    var gr = Math.sqrt(Math.max(0, 1 - gy * gy));
+    var phi = i * 2.399963;
+    dirCenter[d] = [Math.cos(phi) * gr * 300, gy * 240, Math.sin(phi) * gr * 300];
   });
-  var centroids = {};
+  var perDir = {};
+  nodes.forEach(function (n) {
+    var k = (perDir[n.dir] = (perDir[n.dir] || 0) + 1);
+    var c = dirCenter[n.dir];
+    var a2 = k * 2.399963;
+    var rr = 24 + Math.sqrt(k) * 15;
+    n.x = c[0] + Math.cos(a2) * rr;
+    n.y = c[1] + Math.sin(a2) * rr;
+    n.z = c[2] + Math.sin(a2 * 0.7) * rr * 0.6;
+  });
 
   // ---- header ----
   var memTotal = (DATA.memories || []).length;
@@ -203,10 +215,14 @@ const TEMPLATE = `<!doctype html>
   l2.innerHTML = '<span class="ring warn"></span>⚠ cần review';
   legend.appendChild(l2);
 
-  // ---- canvas & camera ----
+  // ---- canvas, camera (2D pan/zoom + 3D orbit) ----
   var canvas = document.getElementById('canvas');
   var ctx = canvas.getContext('2d');
-  var cam = { x: 0, y: 0, k: 1 };
+  var W = 1200, H = 800;
+  var cam = { x: 0, y: 0, k: 1 };                    // 2D
+  var orb = { yaw: 0.6, pitch: 0.25, dist: 760 };    // 3D
+  var mode3d = false, autoRotate = true, interacting = false;
+  var PERSP = 720;
   var dpr = Math.max(1, window.devicePixelRatio || 1);
   function resize() {
     var el = document.getElementById('map');
@@ -214,65 +230,93 @@ const TEMPLATE = `<!doctype html>
     canvas.width = W * dpr; canvas.height = H * dpr;
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
   }
-  window.addEventListener('resize', function () { resize(); });
+  window.addEventListener('resize', resize);
   resize();
 
-  function toScreen(x, y) { return [W / 2 + (x - cam.x) * cam.k, H / 2 + (y - cam.y) * cam.k]; }
-  function toWorld(px, py) { return [(px - W / 2) / cam.k + cam.x, (py - H / 2) / cam.k + cam.y]; }
+  function project(n) {
+    if (!mode3d) {
+      n.sx = W / 2 + (n.x - cam.x) * cam.k;
+      n.sy = H / 2 + (n.y - cam.y) * cam.k;
+      n.sr = n.r * cam.k;
+      n.sdepth = 1;
+      n.sOn = true;
+      return;
+    }
+    var cy = Math.cos(orb.yaw), sy = Math.sin(orb.yaw);
+    var cp = Math.cos(orb.pitch), sp = Math.sin(orb.pitch);
+    var x1 = n.x * cy + n.z * sy;
+    var z1 = -n.x * sy + n.z * cy;
+    var y2 = n.y * cp - z1 * sp;
+    var z2 = n.y * sp + z1 * cp;
+    var d = z2 + orb.dist;
+    if (d < 80) { n.sOn = false; return; }
+    var s = PERSP / d;
+    n.sx = W / 2 + x1 * s;
+    n.sy = H / 2 + y2 * s;
+    n.sr = Math.max(1.5, n.r * s * 1.15);
+    n.sdepth = Math.max(0.18, Math.min(1, 950 / d));
+    n.sOn = true;
+  }
+  function toWorld2D(px, py) { return [(px - W / 2) / cam.k + cam.x, (py - H / 2) / cam.k + cam.y]; }
 
   // ---- filters ----
   var showImports = true, showCochange = true, onlyMem = false, allEdges = false, query = '';
-  function visible(n) {
-    if (onlyMem && n.mems.length === 0) return false;
-    return true;
-  }
+  function visible(n) { return !(onlyMem && n.mems.length === 0); }
   function matches(n) { return query === '' || n.id.toLowerCase().indexOf(query) !== -1; }
 
-  // ---- simulation ----
+  // ---- simulation: one 3D sim; 2D mode spring-flattens z ----
   var alpha = 1;
   function tick() {
     var i, j, n, m, e;
-    for (i = 0; i < dirs.length; i++) centroids[dirs[i]] = { x: 0, y: 0, c: 0 };
+    var centroids = {};
+    for (i = 0; i < dirs.length; i++) centroids[dirs[i]] = { x: 0, y: 0, z: 0, c: 0 };
     for (i = 0; i < nodes.length; i++) {
-      n = nodes[i]; var c = centroids[n.dir]; c.x += n.x; c.y += n.y; c.c++;
+      n = nodes[i]; var c = centroids[n.dir];
+      c.x += n.x; c.y += n.y; c.z += n.z; c.c++;
     }
     for (i = 0; i < nodes.length; i++) {
       n = nodes[i];
       for (j = i + 1; j < nodes.length; j++) {
         m = nodes[j];
-        var dx = n.x - m.x, dy = n.y - m.y;
-        var d2 = dx * dx + dy * dy + 0.01;
-        if (d2 > 120000) continue;
-        var f = (n.dir === m.dir ? 1500 : 2600) / d2; // cross-cluster pushes harder
+        var dx = n.x - m.x, dy = n.y - m.y, dz = n.z - m.z;
+        var d2 = dx * dx + dy * dy + dz * dz + 0.01;
+        if (d2 > 130000) continue;
+        var f = (n.dir === m.dir ? 1500 : 2600) / d2;
         var dl = Math.sqrt(d2);
-        dx /= dl; dy /= dl;
-        n.vx += dx * f; n.vy += dy * f;
-        m.vx -= dx * f; m.vy -= dy * f;
+        dx /= dl; dy /= dl; dz /= dl;
+        n.vx += dx * f; n.vy += dy * f; n.vz += dz * f;
+        m.vx -= dx * f; m.vy -= dy * f; m.vz -= dz * f;
       }
       var ct = centroids[n.dir];
-      if (ct.c > 0) { n.vx += (ct.x / ct.c - n.x) * 0.035; n.vy += (ct.y / ct.c - n.y) * 0.035; }
-      n.vx += -n.x * 0.0025; n.vy += -n.y * 0.0025;
+      if (ct.c > 0) {
+        n.vx += (ct.x / ct.c - n.x) * 0.035;
+        n.vy += (ct.y / ct.c - n.y) * 0.035;
+        n.vz += (ct.z / ct.c - n.z) * 0.035;
+      }
+      n.vx += -n.x * 0.0025; n.vy += -n.y * 0.0025; n.vz += -n.z * 0.0025;
+      if (!mode3d) n.vz += -n.z * 0.09; // flatten for the reading view
     }
     for (i = 0; i < edges.length; i++) {
       e = edges[i];
       var rest = e.kind === 'imports' ? 100 : 75;
       var k = e.kind === 'imports' ? 0.018 : 0.028;
-      var ex = e.b.x - e.a.x, ey = e.b.y - e.a.y;
-      var el = Math.sqrt(ex * ex + ey * ey) + 0.01;
+      var ex = e.b.x - e.a.x, ey = e.b.y - e.a.y, ez = e.b.z - e.a.z;
+      var el = Math.sqrt(ex * ex + ey * ey + ez * ez) + 0.01;
       var s = k * (el - rest) / el;
-      e.a.vx += ex * s; e.a.vy += ey * s;
-      e.b.vx -= ex * s; e.b.vy -= ey * s;
+      e.a.vx += ex * s; e.a.vy += ey * s; e.a.vz += ez * s;
+      e.b.vx -= ex * s; e.b.vy -= ey * s; e.b.vz -= ez * s;
     }
     for (i = 0; i < nodes.length; i++) {
       n = nodes[i];
-      if (n.pinned) { n.vx = 0; n.vy = 0; continue; }
-      n.vx *= 0.82; n.vy *= 0.82;
-      n.x += n.vx * alpha; n.y += n.vy * alpha;
+      if (n.pinned) { n.vx = 0; n.vy = 0; n.vz = 0; continue; }
+      n.vx *= 0.82; n.vy *= 0.82; n.vz *= 0.82;
+      n.x += n.vx * alpha; n.y += n.vy * alpha; n.z += n.vz * alpha;
     }
     if (alpha > 0.02) alpha *= 0.995;
+    if (mode3d && autoRotate && !interacting) orb.yaw += 0.0032;
   }
 
-  // ---- territory hulls (soft region per directory) ----
+  // ---- territory hulls (2D only) ----
   function hullOf(points) {
     if (points.length < 3) return points.slice();
     points = points.slice().sort(function (p, q) { return p[0] - q[0] || p[1] - q[1]; });
@@ -291,14 +335,16 @@ const TEMPLATE = `<!doctype html>
     lower.pop(); upper.pop();
     return lower.concat(upper);
   }
-
+  function hexA(hex, a) {
+    var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+  }
   function drawTerritories() {
     dirs.forEach(function (d) {
-      var pts = [];
-      var topPt = null;
+      var pts = [], topPt = null;
       nodes.forEach(function (n) {
-        if (n.dir !== d || !visible(n)) return;
-        var p = toScreen(n.x, n.y);
+        if (n.dir !== d || !visible(n) || !n.sOn) return;
+        var p = [n.sx, n.sy];
         pts.push(p);
         if (!topPt || p[1] < topPt[1]) topPt = p;
       });
@@ -325,21 +371,16 @@ const TEMPLATE = `<!doctype html>
       }
     });
   }
-  function hexA(hex, a) {
-    var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-    return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
-  }
 
   // ---- drawing ----
   var hover = null, selected = null;
   function focusNode() { return hover || selected; }
-
-  function drawArrow(p1, p2, rTarget, color) {
-    var dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+  function drawArrow(x1, y1, x2, y2, rTarget, color) {
+    var dx = x2 - x1, dy = y2 - y1;
     var len = Math.sqrt(dx * dx + dy * dy);
     if (len < 1) return;
     dx /= len; dy /= len;
-    var tipX = p2[0] - dx * (rTarget + 4), tipY = p2[1] - dy * (rTarget + 4);
+    var tipX = x2 - dx * (rTarget + 4), tipY = y2 - dy * (rTarget + 4);
     var s = 6;
     ctx.beginPath();
     ctx.moveTo(tipX, tipY);
@@ -353,38 +394,44 @@ const TEMPLATE = `<!doctype html>
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    drawTerritories();
-
     var i, e, n;
-    var f = focusNode();
+    for (i = 0; i < nodes.length; i++) project(nodes[i]);
+    if (!mode3d) drawTerritories();
 
-    for (i = 0; i < edges.length; i++) {
-      e = edges[i];
+    var f = focusNode();
+    var edgeList = edges;
+    if (mode3d) {
+      edgeList = edges.slice().sort(function (p, q) {
+        return (p.a.sdepth + p.b.sdepth) - (q.a.sdepth + q.b.sdepth);
+      });
+    }
+    for (i = 0; i < edgeList.length; i++) {
+      e = edgeList[i];
       if (e.kind === 'imports' && !showImports) continue;
       if (e.kind === 'co_change' && !showCochange) continue;
-      if (!visible(e.a) || !visible(e.b)) continue;
+      if (!visible(e.a) || !visible(e.b) || !e.a.sOn || !e.b.sOn) continue;
       var incident = f && (e.a === f || e.b === f);
-      if (f && !incident) continue; // spotlight mode: chỉ vẽ liên kết của node đang soi
+      if (f && !incident) continue; // spotlight: chỉ liên kết của node đang soi
+      var depthMul = mode3d ? Math.min(e.a.sdepth, e.b.sdepth) : 1;
       var queryDim = query !== '' && !(matches(e.a) && matches(e.b));
-      var p1 = toScreen(e.a.x, e.a.y), p2 = toScreen(e.b.x, e.b.y);
       ctx.beginPath();
-      ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+      ctx.moveTo(e.a.sx, e.a.sy); ctx.lineTo(e.b.sx, e.b.sy);
       if (incident) {
         if (e.kind === 'co_change') {
           ctx.setLineDash([5, 4]);
-          ctx.strokeStyle = '#e8e6da';
+          ctx.strokeStyle = 'rgba(232,230,218,' + (0.95 * Math.max(0.5, depthMul)) + ')';
           ctx.lineWidth = 1.6 + Math.min(2, e.w * 2);
         } else {
           ctx.setLineDash([]);
-          ctx.strokeStyle = '#c3c2b7';
+          ctx.strokeStyle = 'rgba(195,194,183,' + (0.95 * Math.max(0.5, depthMul)) + ')';
           ctx.lineWidth = 1.6;
         }
         ctx.stroke();
         if (e.kind === 'imports') {
-          drawArrow(p1, p2, e.b.r * cam.k, '#c3c2b7'); // a imports b: mũi tên chỉ vào b
+          drawArrow(e.a.sx, e.a.sy, e.b.sx, e.b.sy, e.b.sr, '#c3c2b7');
         }
       } else {
-        var base = allEdges ? 0.5 : 0.14;
+        var base = (allEdges ? 0.5 : 0.14) * depthMul;
         if (e.kind === 'co_change') {
           ctx.setLineDash([5, 4]);
           ctx.strokeStyle = 'rgba(195,194,183,' + (queryDim ? 0.04 : base) + ')';
@@ -399,38 +446,42 @@ const TEMPLATE = `<!doctype html>
     }
     ctx.setLineDash([]);
 
-    for (i = 0; i < nodes.length; i++) {
-      n = nodes[i];
-      if (!visible(n)) continue;
-      var p = toScreen(n.x, n.y);
-      var r = n.r * cam.k;
+    var order = nodes;
+    if (mode3d) {
+      order = nodes.slice().sort(function (p, q) { return p.sdepth - q.sdepth; }); // far first
+    }
+    for (i = 0; i < order.length; i++) {
+      n = order[i];
+      if (!visible(n) || !n.sOn) continue;
       var isFocus = f && n === f;
       var isNbr = f && f.nbr[n.idx];
       var recede = f ? !(isFocus || isNbr) : false;
       var queryDim2 = query !== '' && !matches(n);
-      ctx.globalAlpha = queryDim2 ? 0.08 : recede ? 0.14 : 1;
+      var depthA = mode3d ? n.sdepth : 1;
+      ctx.globalAlpha = (queryDim2 ? 0.08 : recede ? 0.14 : 1) * depthA;
       if (n.stale) {
-        ctx.beginPath(); ctx.arc(p[0], p[1], r + 5, 0, 7); ctx.strokeStyle = '#fab219';
+        ctx.beginPath(); ctx.arc(n.sx, n.sy, n.sr + 5, 0, 7); ctx.strokeStyle = '#fab219';
         ctx.lineWidth = 2.5; ctx.stroke();
       }
       if (n.mems.length > 0) {
-        ctx.beginPath(); ctx.arc(p[0], p[1], r + 2, 0, 7); ctx.strokeStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(n.sx, n.sy, n.sr + 2, 0, 7); ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 1.6; ctx.stroke();
       }
-      ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 7);
+      ctx.beginPath(); ctx.arc(n.sx, n.sy, n.sr, 0, 7);
       ctx.fillStyle = n.color; ctx.fill();
       if (isFocus || n === selected) {
-        ctx.beginPath(); ctx.arc(p[0], p[1], r + 8, 0, 7);
+        ctx.beginPath(); ctx.arc(n.sx, n.sy, n.sr + 8, 0, 7);
         ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.2; ctx.stroke();
       }
+      var zoomK = mode3d ? 1 : cam.k;
       var showLabel =
         isFocus || isNbr || n === selected ||
-        (!f && (cam.k > 1.35 || n === hover || (n.mems.length > 0 && cam.k > 0.9)));
+        (!f && (zoomK > 1.35 || n === hover || (n.mems.length > 0 && (mode3d ? n.sdepth > 0.7 : zoomK > 0.9))));
       if (showLabel && !queryDim2 && !recede) {
         var name = n.id.split('/').pop();
         ctx.font = (isFocus ? '600 ' : '') + '11px system-ui, sans-serif';
         ctx.fillStyle = isFocus || isNbr ? '#ffffff' : '#898781';
-        ctx.fillText(name, p[0] + r + 6, p[1] + 4);
+        ctx.fillText(name, n.sx + n.sr + 6, n.sy + 4);
       }
       ctx.globalAlpha = 1;
     }
@@ -442,33 +493,46 @@ const TEMPLATE = `<!doctype html>
   // ---- interaction ----
   var tipEl = document.getElementById('tip');
   function pick(px, py) {
-    var w = toWorld(px, py);
-    var best = null, bd = 1e9;
+    var best = null, bestDepth = -1;
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
-      if (!visible(n)) continue;
-      var dx = n.x - w[0], dy = n.y - w[1];
+      if (!visible(n) || !n.sOn) continue;
+      var dx = n.sx - px, dy = n.sy - py;
       var d = Math.sqrt(dx * dx + dy * dy);
-      var hit = Math.max(12 / cam.k, n.r + 6 / cam.k);
-      if (d < hit && d < bd) { best = n; bd = d; }
+      if (d < Math.max(12, n.sr + 6) && n.sdepth > bestDepth) { best = n; bestDepth = n.sdepth; }
     }
     return best;
   }
-  var dragNode = null, panning = false, lastX = 0, lastY = 0, moved = false;
+  var dragNode = null, panning = false, orbiting = false, lastX = 0, lastY = 0, moved = false;
+  var downNode = null;
   canvas.addEventListener('mousedown', function (ev) {
     var r = canvas.getBoundingClientRect();
     var px = ev.clientX - r.left, py = ev.clientY - r.top;
-    dragNode = pick(px, py);
-    panning = !dragNode;
+    downNode = pick(px, py);
+    interacting = true;
+    if (mode3d) {
+      orbiting = true;
+    } else if (downNode) {
+      dragNode = downNode;
+      dragNode.pinned = true;
+      alpha = Math.max(alpha, 0.3);
+    } else {
+      panning = true;
+    }
     lastX = px; lastY = py; moved = false;
     canvas.classList.add('dragging');
-    if (dragNode) { dragNode.pinned = true; alpha = Math.max(alpha, 0.3); }
   });
   window.addEventListener('mousemove', function (ev) {
     var r = canvas.getBoundingClientRect();
     var px = ev.clientX - r.left, py = ev.clientY - r.top;
-    if (dragNode) {
-      var w = toWorld(px, py);
+    if (orbiting) {
+      var ddx = px - lastX, ddy = py - lastY;
+      orb.yaw += ddx * 0.005;
+      orb.pitch = Math.max(-1.35, Math.min(1.35, orb.pitch + ddy * 0.005));
+      lastX = px; lastY = py;
+      if (Math.abs(ddx) + Math.abs(ddy) > 2) moved = true;
+    } else if (dragNode) {
+      var w = toWorld2D(px, py);
       dragNode.x = w[0]; dragNode.y = w[1]; moved = true;
     } else if (panning) {
       cam.x -= (px - lastX) / cam.k; cam.y -= (py - lastY) / cam.k;
@@ -488,16 +552,25 @@ const TEMPLATE = `<!doctype html>
   });
   window.addEventListener('mouseup', function () {
     canvas.classList.remove('dragging');
-    if (dragNode && !moved) select(dragNode);
-    if (!dragNode && panning && !moved) select(null);
+    interacting = false;
+    if (mode3d) {
+      if (!moved) select(downNode); // click (kể cả nền = bỏ chọn)
+    } else {
+      if (dragNode && !moved) select(dragNode);
+      if (!dragNode && panning && !moved) select(null);
+    }
     if (dragNode) dragNode.pinned = false;
-    dragNode = null; panning = false;
+    dragNode = null; panning = false; orbiting = false; downNode = null;
   });
   canvas.addEventListener('wheel', function (ev) {
     ev.preventDefault();
+    if (mode3d) {
+      orb.dist = Math.max(240, Math.min(2400, orb.dist * (ev.deltaY < 0 ? 0.9 : 1.12)));
+      return;
+    }
     var r = canvas.getBoundingClientRect();
     var px = ev.clientX - r.left, py = ev.clientY - r.top;
-    var w = toWorld(px, py);
+    var w = toWorld2D(px, py);
     var k2 = Math.min(6, Math.max(0.25, cam.k * (ev.deltaY < 0 ? 1.15 : 0.87)));
     cam.x = w[0] - (px - W / 2) / k2;
     cam.y = w[1] - (py - H / 2) / k2;
@@ -549,12 +622,31 @@ const TEMPLATE = `<!doctype html>
     panel.querySelectorAll('.edge').forEach(function (el) {
       el.addEventListener('click', function () {
         var target = byId[el.getAttribute('data-path')];
-        if (target) { select(target); cam.x = target.x; cam.y = target.y; }
+        if (!target) return;
+        select(target);
+        if (!mode3d) { cam.x = target.x; cam.y = target.y; }
       });
     });
   }
 
   // ---- controls ----
+  var hint = document.getElementById('hint');
+  var rotWrap = document.getElementById('rotWrap');
+  var rotBox = document.getElementById('autoRotate');
+  function refreshHint() {
+    hint.innerHTML = mode3d
+      ? '<b style="color:var(--ink-2)">3D trình diễn:</b> kéo = xoay quanh · lăn chuột = tiến/lùi · trỏ/click node để soi liên kết (mũi tên = chiều import) — đọc kỹ thì quay về 2D 🗺️'
+      : '<b style="color:var(--ink-2)">trỏ vào một node để soi liên kết của riêng nó</b> (mũi tên = chiều import) · click để ghim + xem ghi chú · kéo node/nền · lăn chuột zoom — sinh bởi <kbd>haido viz</kbd>';
+  }
+  refreshHint();
+  document.getElementById('mode3d').addEventListener('change', function (e) {
+    mode3d = e.target.checked;
+    alpha = Math.max(alpha, 0.6); // reheat so the layout inflates/flattens
+    rotBox.disabled = !mode3d;
+    rotWrap.style.opacity = mode3d ? '1' : '.45';
+    refreshHint();
+  });
+  rotBox.addEventListener('change', function (e) { autoRotate = e.target.checked; });
   document.getElementById('showImports').addEventListener('change', function (e) { showImports = e.target.checked; });
   document.getElementById('showCochange').addEventListener('change', function (e) { showCochange = e.target.checked; });
   document.getElementById('allEdges').addEventListener('change', function (e) { allEdges = e.target.checked; });
