@@ -2,6 +2,10 @@
 docs/
 README.md
 AGENTS.md
+
+# Machine-managed configs (owned by `haido install`) — prettier must not fight the installer
+.claude/
+.mcp.json
 coverage/
 dist/
 test/fixtures/
