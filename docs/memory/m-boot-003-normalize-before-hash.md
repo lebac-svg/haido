@@ -3,7 +3,7 @@ id: m_boot_003
 type: invariant
 status: fresh
 anchors:
-  - { kind: file, path: 'docs/ARCHITECTURE.md' }
+  - { kind: file, path: 'docs/vi/ARCHITECTURE.md' }
 created: 2026-07-10
 author: human:daiba + agent:claude
 ---

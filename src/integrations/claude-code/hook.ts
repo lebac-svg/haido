@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync }
 import path from 'node:path';
 import { loadConfig } from '../../core/config.js';
 import { openDb } from '../../core/db.js';
+import { t } from '../../core/lang.js';
 import { toRepoRelative } from '../../core/paths.js';
 import { dbPath, haidoDir, workspaceExists } from '../../core/workspace.js';
 import { indexRepo } from '../../indexer/indexer.js';
@@ -52,7 +53,10 @@ export async function runHook(
         saveState(root, sessionId, state);
         return out(
           'SessionStart',
-          mapOverview(db, { budgetTokens: config.recall.overviewBudgetTokens }),
+          mapOverview(db, {
+            budgetTokens: config.recall.overviewBudgetTokens,
+            lang: config.ui.lang,
+          }),
         );
       }
 
@@ -72,9 +76,11 @@ export async function runHook(
         for (const e of report.events) {
           if (e.event === 'drifted' || e.event === 'went_missing') {
             warnings.push(
-              `⚠ haido: ghi chú [${e.memoryId}] neo \`${e.qname}\` vừa chuyển ` +
-                `${e.event === 'drifted' ? 'DRIFT' : 'MISSING'} vì thay đổi này — nếu nó hết đúng, ` +
-                `dùng tool reanchor (confirm/move/retire) hoặc sửa nội dung ghi chú.`,
+              t('hook_drift_warning', config.ui.lang, {
+                id: e.memoryId,
+                qname: e.qname,
+                state: e.event === 'drifted' ? 'DRIFT' : 'MISSING',
+              }),
             );
           }
         }
@@ -85,6 +91,7 @@ export async function runHook(
         file: rel,
         budgetTokens: config.recall.budgetTokens,
         excludeIds: state.injected,
+        lang: config.ui.lang,
       });
       if (result.hits.length === 0 && warnings.length === 0) return null;
       if (result.hits.length > 0) {

@@ -1,3 +1,4 @@
+import { t, type Lang } from '../core/lang.js';
 import type { AnchorRow, MemoryRow } from '../memory/store.js';
 import type { IndexSummary } from './commands.js';
 
@@ -9,13 +10,16 @@ const TYPE_ICON: Record<string, string> = {
   todo: '📝',
 };
 
-export function formatIndexSummary(s: IndexSummary): string {
+export function formatIndexSummary(s: IndexSummary, lang: Lang = 'en'): string {
   const lines = [
     `files: ${String(s.filesSeen)} seen, ${String(s.filesIndexed)} indexed, ${String(s.filesDeleted)} deleted · symbol diffs: ${String(s.symbolsChanged)}`,
   ];
   if (s.coChange?.ok && s.coChange.pairsStored > 0) {
     lines.push(
-      `co-change: ${String(s.coChange.pairsStored)} cặp file hay đổi cùng nhau (quét ${String(s.coChange.commitsScanned)} commit)`,
+      t('summary_cochange', lang, {
+        pairs: s.coChange.pairsStored,
+        commits: s.coChange.commitsScanned,
+      }),
     );
   }
   for (const e of s.staleness.events) {
@@ -37,15 +41,21 @@ export function formatIndexSummary(s: IndexSummary): string {
   return lines.join('\n');
 }
 
-export function formatMemoryLine(m: MemoryRow & { anchors: AnchorRow[] }): string {
+export function formatMemoryLine(
+  m: MemoryRow & { anchors: AnchorRow[] },
+  lang: Lang = 'en',
+): string {
   const icon = TYPE_ICON[m.type] ?? '•';
-  const flag = m.status === 'needs_review' ? ' ⚠️(needs review — code changed)' : '';
+  const flag = m.status === 'needs_review' ? t('memline_review', lang) : '';
   const anchors = m.anchors.map((a) => a.qname).join(', ');
-  return `${icon} ${m.type.toUpperCase()}${flag} [${m.id}] ${anchors}\n   ${m.title} — ${m.body}\n   why: ${m.why}`;
+  return `${icon} ${m.type.toUpperCase()}${flag} [${m.id}] ${anchors}\n   ${m.title} — ${m.body}\n   ${t('why', lang)}: ${m.why}`;
 }
 
-export function formatStale(memories: Array<MemoryRow & { anchors: AnchorRow[] }>): string {
-  if (memories.length === 0) return 'review queue is empty — every memory matches the code ✅';
+export function formatStale(
+  memories: Array<MemoryRow & { anchors: AnchorRow[] }>,
+  lang: Lang = 'en',
+): string {
+  if (memories.length === 0) return t('stale_empty', lang);
   const blocks = memories.map((m) => {
     const anchorLines = m.anchors
       .filter((a) => a.status === 'drift' || a.status === 'missing')
@@ -62,7 +72,7 @@ export function formatStale(memories: Array<MemoryRow & { anchors: AnchorRow[] }
         return `   ❓ missing #${String(a.id)} ${a.qname}${candidates.length > 0 ? ` — candidates: ${candidates.join(' | ')}` : ''}`;
       });
     return [
-      formatMemoryLine(m),
+      formatMemoryLine(m, lang),
       ...anchorLines,
       `   resolve: haido reanchor ${m.id} --confirm | --retire | --move <anchorId> --to <target>`,
     ].join('\n');

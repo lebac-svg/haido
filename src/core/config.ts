@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import type { Lang } from './lang.js';
 
 /**
  * haido.toml — committable per-repo config (ARCHITECTURE §9). Parsed by a
@@ -29,12 +30,17 @@ export interface HaidoConfig {
     budgetTokens: number;
     overviewBudgetTokens: number;
   };
+  ui: {
+    /** Output language for recall/overview/stale/hook strings ('en' | 'vi'). */
+    lang: Lang;
+  };
 }
 
 export const DEFAULT_CONFIG: HaidoConfig = {
   index: { include: [], exclude: [], maxFileKb: 1500, purgeDeletedDays: 30 },
   cochange: { maxCommits: 2000, maxFilesPerCommit: 30, minTogether: 3, minConfidence: 0.3 },
   recall: { budgetTokens: 800, overviewBudgetTokens: 1500 },
+  ui: { lang: 'en' },
 };
 
 export function configPath(root: string): string {
@@ -86,6 +92,11 @@ export function loadConfig(root: string): LoadedConfig {
             recall['overview_budget_tokens'],
             DEFAULT_CONFIG.recall.overviewBudgetTokens,
           ),
+        },
+        ui: {
+          lang: ((t['ui'] as Record<string, unknown> | undefined)?.['lang'] === 'vi'
+            ? 'vi'
+            : 'en') as Lang,
         },
       },
     };
@@ -203,4 +214,7 @@ export const STARTER_TOML = `# haido.toml — cấu hình cho repo này (commit 
 [recall]
 # budget_tokens = 800            # ngân sách token mỗi lần hook tiêm theo file
 # overview_budget_tokens = 1500  # ngân sách cho bản đồ đầu phiên
+
+[ui]
+# lang = "en"                    # ngôn ngữ output của haido: "en" (mặc định) | "vi"
 `;

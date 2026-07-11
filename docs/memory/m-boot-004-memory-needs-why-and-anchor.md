@@ -3,7 +3,7 @@ id: m_boot_004
 type: convention
 status: fresh
 anchors:
-  - { kind: file, path: 'docs/SPEC.md' }
+  - { kind: file, path: 'docs/vi/SPEC.md' }
 created: 2026-07-10
 author: human:daiba + agent:claude
 ---

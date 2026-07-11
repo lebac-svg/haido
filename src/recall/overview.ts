@@ -1,12 +1,14 @@
 import type { Db } from '../core/db.js';
+import { t, type Lang } from '../core/lang.js';
 import { estimateTokens } from './rank.js';
 
 /**
  * map_overview (SPEC §7): a warm-start for a fresh session — compressed directory
  * stats + the project's standing invariants/gotchas, within a token budget.
  */
-export function mapOverview(db: Db, opts: { budgetTokens?: number } = {}): string {
+export function mapOverview(db: Db, opts: { budgetTokens?: number; lang?: Lang } = {}): string {
   const budget = opts.budgetTokens ?? 1500;
+  const lang = opts.lang ?? 'en';
 
   const files = db
     .prepare(
@@ -32,7 +34,7 @@ export function mapOverview(db: Db, opts: { budgetTokens?: number } = {}): strin
   const dirs = new Map<string, DirStat>();
   const dirOf = (p: string): string => {
     const i = p.indexOf('/');
-    return i === -1 ? '(gốc)' : p.slice(0, i) + '/';
+    return i === -1 ? t('overview_root', lang) : p.slice(0, i) + '/';
   };
   for (const f of files) {
     const d = dirOf(f.path);
@@ -51,10 +53,15 @@ export function mapOverview(db: Db, opts: { budgetTokens?: number } = {}): strin
 
   const dirLines = [...dirs.entries()]
     .sort((a, b) => b[1].files - a[1].files)
-    .map(([d, s]) => {
-      const review = s.review.size > 0 ? ` (⚠ ${String(s.review.size)} cần review)` : '';
-      return `- ${d} — ${String(s.files)} file · ${String(s.symbols)} symbol · ${String(s.memories.size)} ghi chú${review}`;
-    });
+    .map(([d, s]) =>
+      t('overview_line', lang, {
+        dir: d,
+        files: s.files,
+        symbols: s.symbols,
+        mems: s.memories.size,
+        review: s.review.size > 0 ? t('overview_review_suffix', lang, { n: s.review.size }) : '',
+      }),
+    );
 
   const laws = db
     .prepare(
@@ -77,13 +84,13 @@ export function mapOverview(db: Db, opts: { budgetTokens?: number } = {}): strin
     .prepare(`SELECT count(*) AS c FROM memories WHERE status = 'needs_review'`)
     .get() as { c: number };
 
+  const header = t('overview_header', lang);
+  const lawsHeader = t('overview_laws', lang);
   const sections = [
-    '### Bản đồ dự án (haido)',
+    header,
     ...dirLines,
-    ...(lawLines.length > 0 ? ['', '**Luật của dự án (đọc trước khi sửa):**', ...lawLines] : []),
-    ...(total.c > 0
-      ? ['', `⚠ ${String(total.c)} ghi chú đang cần review — gọi tool stale_memories khi rảnh.`]
-      : []),
+    ...(lawLines.length > 0 ? ['', lawsHeader, ...lawLines] : []),
+    ...(total.c > 0 ? ['', t('overview_stale_cta', lang, { n: total.c })] : []),
   ];
 
   // trim to budget from the bottom of the dir list first
@@ -91,10 +98,10 @@ export function mapOverview(db: Db, opts: { budgetTokens?: number } = {}): strin
   while (estimateTokens(text) > budget && dirLines.length > 3) {
     dirLines.pop();
     text = [
-      '### Bản đồ dự án (haido)',
+      header,
       ...dirLines,
-      `- … (rút gọn cho vừa ngân sách token)`,
-      ...(lawLines.length > 0 ? ['', '**Luật của dự án (đọc trước khi sửa):**', ...lawLines] : []),
+      t('overview_trimmed', lang),
+      ...(lawLines.length > 0 ? ['', lawsHeader, ...lawLines] : []),
     ].join('\n');
   }
   return text;

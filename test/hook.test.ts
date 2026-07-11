@@ -46,7 +46,7 @@ describe('claude-code hook runner', () => {
     expect(first).not.toBeNull();
     const parsed = JSON.parse(first ?? '') as HookOut;
     expect(parsed.hookSpecificOutput.hookEventName).toBe('SessionStart');
-    expect(parsed.hookSpecificOutput.additionalContext).toContain('Bản đồ dự án');
+    expect(parsed.hookSpecificOutput.additionalContext).toContain('Project map'); // en default
     expect(parsed.hookSpecificOutput.additionalContext).toContain('Toạ độ 0-based');
 
     expect(await runHook('session-start', tmp, payload({}))).toBeNull();

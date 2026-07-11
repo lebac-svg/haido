@@ -1,66 +1,74 @@
-# haido — Hiến pháp chất lượng (Reflection có neo)
+# haido — Engineering constitution (grounded reflection)
 
-**Vì sao tài liệu này tồn tại:** haido là công cụ dạy AI kỷ luật trí nhớ. *Một dự án dạy kỷ luật mà bản thân ẩu thì mất tư cách quản lý dự án khác.* Vậy nên repo này phải là **hình mẫu sống** của chính triết lý nó bán: mọi lời tự phê có bằng chứng, mọi bài học được ghi lại, mọi ghi chú có neo.
+**Why this file exists:** haido is a tool that teaches AI discipline about memory.
+*A project that teaches discipline while being sloppy itself loses the right to manage
+other projects.* This repo must be a living model of what it sells: every self-critique
+backed by evidence, every lesson recorded, every note anchored.
 
-**Nguyên tắc gốc — Reflection có neo:** AI (và người) được phép tự soi lỗi và viết lại, nhưng **mọi lời tự phê phải đối chiếu với một tín hiệu khách quan** — test đỏ, lỗi type, lỗi lint, số đo hiệu năng, kết quả dogfood. Cấm "soi chay" (tự phê không bằng chứng rồi tự sửa theo cảm giác) — nghiên cứu đã chỉ ra self-correction không neo thường làm sai thêm.
+**Root principle — grounded reflection:** AI (and humans) may self-review and rewrite,
+but **every critique must be checked against an objective signal** — a red test, a type
+error, a lint finding, a measurement, dogfood behavior. Unanchored self-correction is
+banned; research shows it often makes things worse.
 
-## 1. Ba vòng phản chiếu
+Vietnamese original with full detail: [vi/QUALITY.md](vi/QUALITY.md).
 
-### Vòng nhỏ — mỗi thay đổi code
-1. Hành vi mới → **viết test trước** (đặc biệt: bảng vàng cho `normalize()`/staleness — trái tim của sản phẩm).
-2. Chạy `npm run check` (typecheck + lint + format + test). **Đỏ thì đọc output thật rồi mới sửa** — không đoán, không sửa test cho "qua chuyện".
-3. Xanh = xong vòng. Không xanh = chưa tồn tại.
+## 1. Three reflection loops
 
-### Vòng giữa — mỗi tính năng (F1–F10 trong SPEC §5)
-Checklist Definition of Done:
-- [ ] Test vàng phủ đúng **tiêu chí nghiệm thu** ghi trong SPEC §5 (không phải test tự nghĩ ra cho dễ).
-- [ ] Chạy xác minh **end-to-end thật** (CLI/MCP thật trên repo fixture), không chỉ unit test.
-- [ ] Code review một lượt (`/code-review`) — sửa hoặc phản biện từng finding, không lờ.
-- [ ] Hành vi lệch spec → sửa **một trong hai** (code hoặc spec) một cách *có chủ đích*, ghi rõ lý do. Spec là luật; lệch âm thầm là bug quy trình.
-- [ ] Có quyết định/bẫy mới? → ghi vào `docs/memory/` (xem §3).
+**Small — every change:** new behavior → write the test first (especially the golden
+tables for `normalize()`/staleness — the heart of the product). Run `npm run check`
+(typecheck + lint + format + tests). **Red means read the real output, then fix the
+root cause** — never guess, never weaken a test to pass. Green = done; not green = does
+not exist.
 
-### Vòng lớn — cuối mỗi sprint
-- **Dogfood kép:** chạy haido trên chính repo haido (ngay khi F1 chạy được) và trên `rong-choi`. Đo các metric SPEC §11, ghi số thật.
-- **Retro 3 câu** (ghi vào `docs/memory/` nếu đáng nhớ):
-  1. Điều gì diễn ra *khác* dự đoán trong ARCHITECTURE?
-  2. Bài học nào sẽ khiến ta đỡ ngu hơn ở sprint sau?
-  3. Spec/kiến trúc nào cần sửa — và đã sửa chưa?
-- **Stale-review thủ công:** đọc lướt `docs/memory/` — ghi chú nào đã sai so với hiện trạng thì sửa/khai tử ngay. (Khi haido tự chạy được trên chính nó, việc này tự động hoá — đó là ngày "self-hosting".)
+**Medium — every feature:** definition-of-done checklist — golden tests cover the
+acceptance criteria written in the spec (not tests invented to be easy); a REAL
+end-to-end run (CLI/MCP against a fixture repo), not just units; one code-review pass
+with every finding fixed or argued; behavior that deviates from the spec means fixing
+one of the two *deliberately*, with the reason stated; new decisions/traps recorded in
+`docs/memory/`.
 
-## 2. Bộ máy kiểm chứng khách quan (the rig)
+**Large — every sprint:** dogfood on haido itself and on a real project; measure the
+spec's metrics with real numbers; a three-question retro (what differed from the
+architecture's predictions? what lesson makes us less dumb next sprint? which doc needs
+fixing — and was it fixed?); a manual stale-review of `docs/memory/`.
 
-| Tầng | Công cụ | Luật |
+## 2. The rig (objective verification machinery)
+
+| Layer | Tool | Law |
 |---|---|---|
-| Kiểu | TypeScript `strict` + `noUncheckedIndexedAccess` | Không `any` trần; `// @ts-expect-error` phải kèm lý do |
-| Lint | eslint flat + typescript-eslint | Cảnh báo cũng phải xử lý trước khi xong tính năng |
-| Format | prettier (code; docs miễn — xem `.prettierignore`) | Không tranh cãi về format |
-| Test | vitest + coverage v8 | Core (`src/core`, `src/indexer`, `src/memory`, `src/recall`) hướng tới ≥ 80% lines khi module ra đời; **bảng vàng normalize/staleness là bất khả xâm phạm** |
-| CI | GitHub Actions: ubuntu + windows × Node 20/22 | **Không xanh không merge.** Windows là first-class (chủ dự án dùng Windows) |
-| Lệnh tổng | `npm run check` | Phải xanh trước khi kết thúc bất kỳ phiên làm việc nào có sửa code |
+| Types | TypeScript `strict` + `noUncheckedIndexedAccess` | no bare `any`; `@ts-expect-error` requires a reason |
+| Lint | eslint flat + typescript-eslint | warnings are handled before a feature is done |
+| Format | prettier (code; hand-formatted docs exempt) | no format debates |
+| Tests | vitest + v8 coverage | golden normalize/staleness tables are inviolable |
+| CI | GitHub Actions: ubuntu + windows × Node 20/22 | **not green, not merged** — Windows is first-class |
+| One command | `npm run check` | must be green before ending any session that touched code |
 
-Luật cứng bổ sung:
-- **Giả định về API bên ngoài phải có prototype kiểm chứng trước khi xây lên trên.** Ví dụ số 1: cơ chế `additionalContext` của hooks Claude Code (ARCHITECTURE §8) — đây là việc đầu tiên của Sprint 0, có ghi chú riêng trong `docs/memory/`.
-- Dependency native phải có prebuilt cho Windows + Linux + macOS (bài học chọn `better-sqlite3`, `web-tree-sitter`).
-- Không skip test/gate để "đi nhanh" — cửa sổ cạnh tranh 6–12 tháng (SURVEY §10) được đối phó bằng **cắt scope**, không bằng cắt chất lượng.
+Hard rules: assumptions about external APIs get a verifying prototype **before**
+anything is built on them (the Claude Code hooks contract was proven by canary test
+first); native dependencies must ship prebuilds for win+linux+mac; the competitive
+window is met by **cutting scope, never by cutting gates**; a commit command must be
+conditioned on the gate's exit code — piping `check; commit` once let a red commit
+through (recorded as m_boot_010).
 
-## 3. Nhật ký hải trình viết tay — `docs/memory/`
+## 3. The hand-written logbook — `docs/memory/`
 
-Cho tới khi haido tự phục vụ được chính nó, repo này ghi trí nhớ **bằng tay, đúng format pack của sản phẩm** (ARCHITECTURE §10). Đây vừa là kỷ luật, vừa là dogfood sớm nhất có thể: ta *sống trong* format của mình trước khi bắt user sống trong đó.
+Until haido fully serves itself, this repo records its memory **by hand in the
+product's own pack format** — discipline and dogfood at once (`haido import --pack
+docs/memory` feeds it into the self-hosted database). Write decisions, invariants,
+gotchas, conventions — with a **why** and an **anchor**; never restate what code/docs
+already say. This pack is Vietnamese (the team's language); new memories switch to
+English when the contributor base does.
 
-- Ghi gì: quyết định (decision), bất biến (invariant), bẫy đã sập (gotcha), quy ước (convention) — kèm **why** và **anchor**. Không chép code, không ghi trạng thái task.
-- Khi nào ghi: ngay lúc chốt quyết định, và trong **nghi thức cuối phiên** (§4).
-- Giai đoạn spec: anchor trỏ vào file docs (tài liệu *là* code lúc này). Khi code ra đời, move anchor sang symbol thật — chính là tập dượt quy trình `reanchor` của sản phẩm.
-- Ngày haido chạy được `import --pack docs/memory/`: pack này trở thành bộ nhớ khởi động của chính nó. **Self-hosting là một mốc phát hành** (ghi vào README khi đạt).
+## 4. End-of-session ritual (manual Stop-hook)
 
-## 4. Nghi thức cuối phiên (Stop-reflection thủ công)
+1. Is `npm run check` green? (If not, the session is not over.)
+2. Any new decision settled, trap sprung, or invariant surfaced? → write it into
+   `docs/memory/` with why + anchor.
+3. Did anything deviate from the spec? → fix code or spec, say so explicitly.
+4. Any promise made in conversation but not done? → do it or turn it into a tracked item.
 
-Bản chạy-bằng-cơm của tính năng Stop-hook (SPEC §12 v0.2). Cuối mỗi phiên làm việc, agent (hoặc người) tự vấn — và chỉ hành động khi có bằng chứng đi kèm:
+## 5. Definition of "done"
 
-1. `npm run check` xanh chưa? (chưa xanh → chưa được kết thúc phiên)
-2. Phiên này có **quyết định** nào user đã chốt, **bẫy** nào đã sập, **bất biến** nào lộ ra không? → ghi `docs/memory/`, đúng format, có why + anchor.
-3. Có làm gì **lệch spec** không? → sửa spec hoặc sửa code, nói rõ với user.
-4. Có hứa gì trong hội thoại mà chưa làm không? → làm hoặc ghi lại thành việc rõ ràng.
-
-## 5. Định nghĩa "xong" (tổng)
-
-Một thứ chỉ được gọi là *xong* khi: test vàng phủ tiêu chí nghiệm thu ✚ `npm run check` xanh trên máy dev ✚ CI xanh cả Windows lẫn Linux ✚ chạy được end-to-end bằng tay ít nhất một lần ✚ bài học (nếu có) đã nằm trong `docs/memory/`. Thiếu một vế = chưa xong, nói "chưa xong".
+Golden tests covering the acceptance criteria ✚ `npm run check` green locally ✚ CI green
+on Windows and Linux ✚ exercised end-to-end by hand at least once ✚ lessons (if any)
+recorded in `docs/memory/`. Missing any leg = not done; say "not done".

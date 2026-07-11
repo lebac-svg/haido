@@ -3,7 +3,7 @@ id: m_boot_010
 type: gotcha
 status: fresh
 anchors:
-  - { kind: file, path: 'docs/QUALITY.md' }
+  - { kind: file, path: 'docs/vi/QUALITY.md' }
 created: 2026-07-11
 author: agent:claude
 ---

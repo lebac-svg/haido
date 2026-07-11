@@ -54,8 +54,8 @@ describe('co-change mining', () => {
 
     const related = findRelated(db, { file: 'a.ts' });
     const b = related.find((r) => r.path === 'b.ts');
-    expect(b?.reasons.some((x) => x.includes('hay đổi cùng nhau (3 lần)'))).toBe(true);
-    expect(related.find((r) => r.path === 'c.ts')?.reasons).toEqual(['cùng thư mục']);
+    expect(b?.reasons.some((x) => x.includes('changes together (3×)'))).toBe(true);
+    expect(related.find((r) => r.path === 'c.ts')?.reasons).toEqual(['same directory']);
   });
 
   it('re-mining is idempotent (full rebuild, no duplicate edges)', async () => {

@@ -1,4 +1,5 @@
 import type { Db } from '../core/db.js';
+import { t, type Lang } from '../core/lang.js';
 import { posixDirname } from '../core/paths.js';
 
 /**
@@ -13,11 +14,12 @@ export interface RelatedFile {
 
 export function findRelated(
   db: Db,
-  target: { file?: string; symbol?: string; limit?: number },
+  target: { file?: string; symbol?: string; limit?: number; lang?: Lang },
 ): RelatedFile[] {
   const file = target.file ?? target.symbol?.split('#')[0];
   if (!file) return [];
   const limit = target.limit ?? 8;
+  const lang = target.lang ?? 'en';
 
   const acc = new Map<string, RelatedFile>();
   const add = (path: string, reason: string, weight: number): void => {
@@ -47,9 +49,11 @@ export function findRelated(
      WHERE e.kind = 'co_change' AND (fs.path = ? OR fd.path = ?)`,
   );
 
-  for (const r of importsOut.all(file) as Array<{ path: string }>) add(r.path, 'import', 1.0);
+  for (const r of importsOut.all(file) as Array<{ path: string }>) {
+    add(r.path, t('reason_import', lang), 1.0);
+  }
   for (const r of importsIn.all(file) as Array<{ path: string }>) {
-    add(r.path, 'được import bởi', 0.9);
+    add(r.path, t('reason_imported_by', lang), 0.9);
   }
   for (const r of coChange.all(file, file) as Array<{
     a: string;
@@ -61,7 +65,7 @@ export function findRelated(
     const together = r.meta ? (JSON.parse(r.meta) as { together?: number }).together : undefined;
     add(
       other,
-      `hay đổi cùng nhau${together ? ` (${String(together)} lần)` : ''}`,
+      `${t('reason_cochange', lang)}${together ? ` (${t('reason_cochange_times', lang, { n: together })})` : ''}`,
       0.5 + 0.4 * Math.min(1, r.weight),
     );
   }
@@ -71,7 +75,7 @@ export function findRelated(
     .prepare(`SELECT path FROM files WHERE deleted_at IS NULL AND path != ? AND path LIKE ?`)
     .all(file, `${dir === '' ? '' : `${dir}/`}%`) as Array<{ path: string }>;
   for (const r of sameDir) {
-    if (posixDirname(r.path) === dir) add(r.path, 'cùng thư mục', 0.3);
+    if (posixDirname(r.path) === dir) add(r.path, t('reason_same_dir', lang), 0.3);
   }
 
   return [...acc.values()].sort((x, y) => y.weight - x.weight).slice(0, limit);

@@ -1,4 +1,5 @@
 import type { Db } from '../core/db.js';
+import { t, type Lang } from '../core/lang.js';
 import { getMemory, type AnchorRow, type MemoryRow } from '../memory/store.js';
 import { findRelated } from './related.js';
 
@@ -19,6 +20,7 @@ export interface RecallRequest {
   now?: number;
   /** Memory ids to skip entirely (hook session dedup). */
   excludeIds?: string[];
+  lang?: Lang;
 }
 
 export interface ScoredHit {
@@ -64,6 +66,7 @@ export function recall(db: Db, req: RecallRequest): RecallResult {
   const now = req.now ?? Date.now();
   const budget = req.budgetTokens ?? 800;
   const limit = req.limit ?? 20;
+  const lang = req.lang ?? 'en';
   const targetFile = req.file ?? req.symbol?.split('#')[0];
 
   interface Cand {
@@ -90,23 +93,29 @@ export function recall(db: Db, req: RecallRequest): RecallResult {
 
   if (req.symbol) {
     for (const r of byQname.all(req.symbol) as Array<{ memory_id: string }>) {
-      put(r.memory_id, { proximity: 'exact', via: `neo đúng ${req.symbol}` });
+      put(r.memory_id, { proximity: 'exact', via: `${t('via_exact_symbol', lang)} ${req.symbol}` });
     }
   }
   if (req.file) {
     for (const r of byPath.all(req.file) as Array<{ memory_id: string }>) {
-      put(r.memory_id, { proximity: 'exact', via: `neo trong ${req.file}` });
+      put(r.memory_id, { proximity: 'exact', via: `${t('via_exact_file', lang)} ${req.file}` });
     }
   }
   if (req.symbol && targetFile) {
     for (const r of byPath.all(targetFile) as Array<{ memory_id: string }>) {
-      put(r.memory_id, { proximity: 'same-file', via: `cùng file ${targetFile}` });
+      put(r.memory_id, {
+        proximity: 'same-file',
+        via: `${t('via_same_file', lang)} ${targetFile}`,
+      });
     }
   }
   if (targetFile) {
-    for (const n of findRelated(db, { file: targetFile, limit: 12 })) {
+    for (const n of findRelated(db, { file: targetFile, limit: 12, lang })) {
       for (const r of byPath.all(n.path) as Array<{ memory_id: string }>) {
-        put(r.memory_id, { proximity: 'neighbor', via: `${n.path}: ${n.reasons[0] ?? 'gần'}` });
+        put(r.memory_id, {
+          proximity: 'neighbor',
+          via: `${n.path}: ${n.reasons[0] ?? t('via_near', lang)}`,
+        });
       }
     }
   }
@@ -124,9 +133,9 @@ export function recall(db: Db, req: RecallRequest): RecallResult {
              WHERE memories_fts MATCH ? AND m.status != 'retired'
              ORDER BY rank LIMIT 20`,
           )
-          .all(tokens.map((t) => `"${t}"`).join(' OR ')) as Array<{ id: string; rank: number }>;
+          .all(tokens.map((w) => `"${w}"`).join(' OR ')) as Array<{ id: string; rank: number }>;
         for (const r of rows)
-          put(r.id, { proximity: 'global', via: 'khớp nội dung', bm25: r.rank });
+          put(r.id, { proximity: 'global', via: t('via_text_match', lang), bm25: r.rank });
       } catch {
         // FTS syntax errors must never break recall
       }
@@ -158,12 +167,12 @@ export function recall(db: Db, req: RecallRequest): RecallResult {
   scored.sort((a, b) => b.score - a.score);
   const top = scored.slice(0, limit);
 
-  const header = '### Trí nhớ liên quan (haido)';
+  const header = t('recall_header', lang);
   const lines = [header];
   let used = estimateTokens(header);
   const kept: ScoredHit[] = [];
   for (const hit of top) {
-    const entry = formatHit(hit);
+    const entry = formatHit(hit, lang);
     const cost = estimateTokens(entry);
     if (kept.length > 0 && used + cost > budget) break;
     lines.push(entry);
@@ -173,16 +182,16 @@ export function recall(db: Db, req: RecallRequest): RecallResult {
 
   return {
     hits: kept,
-    text: kept.length === 0 ? '(chưa có trí nhớ nào ở vùng này)' : lines.join('\n'),
+    text: kept.length === 0 ? t('recall_empty', lang) : lines.join('\n'),
     totalCandidates: cands.size,
     usedTokens: used,
   };
 }
 
-function formatHit(hit: ScoredHit): string {
+function formatHit(hit: ScoredHit, lang: Lang): string {
   const m = hit.memory;
   const icon = TYPE_ICON[m.type] ?? '•';
-  const review = m.status === 'needs_review' ? ' ⚠️CẦN-REVIEW(code đã đổi)' : '';
+  const review = m.status === 'needs_review' ? t('needs_review_tag', lang) : '';
   const anchors = m.anchors.map((a) => `\`${a.qname}\``).join(' ');
-  return `- ${icon} ${m.type.toUpperCase()}${review} [${m.id}] ${anchors}\n  ${m.title} — ${m.body}\n  vì: ${m.why} · (${hit.via})`;
+  return `- ${icon} ${m.type.toUpperCase()}${review} [${m.id}] ${anchors}\n  ${m.title} — ${m.body}\n  ${t('why', lang)}: ${m.why} · (${hit.via})`;
 }

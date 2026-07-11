@@ -48,6 +48,14 @@ describe('haido viz', () => {
     expect(html).not.toContain('https://'); // no external references at all
   });
 
+  it('bakes the UI language at generation time (en default, vi opt-in)', () => {
+    const en = buildVizHtml('{"files":[],"memories":[],"edges":[]}', 'x');
+    expect(en).toContain('only files with notes');
+    expect(en).not.toContain('chỉ file có ghi chú');
+    const vi = buildVizHtml('{"files":[],"memories":[],"edges":[]}', 'x', 'vi');
+    expect(vi).toContain('chỉ file có ghi chú');
+  });
+
   it('escapes </script> injection in embedded data', () => {
     const html = buildVizHtml(JSON.stringify({ files: [{ path: 'a</script><b>.ts' }] }), 'x');
     expect(html).not.toContain('a</script>');

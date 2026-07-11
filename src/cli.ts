@@ -16,6 +16,7 @@ import {
   cmdRemember,
   cmdStale,
   cmdViz,
+  getLang,
   requireDb,
 } from './cli/commands.js';
 import { formatIndexSummary, formatStale } from './cli/format.js';
@@ -43,7 +44,7 @@ program
   .description('create .haido/ and index this repository')
   .action(async () => {
     const summary = await cmdInit(root());
-    console.log(formatIndexSummary(summary));
+    console.log(formatIndexSummary(summary, getLang(root())));
     if (summary.wroteConfig)
       console.log('wrote haido.toml (starter — mở ra chỉnh include/exclude)');
     console.log("tip: add '.haido/' to your .gitignore — knowledge travels via the memory pack");
@@ -55,7 +56,7 @@ program
   .description('re-index changed files and reconcile memory anchors')
   .option('--watch', 're-index on every save (debounced)')
   .action(async (opts: Record<string, unknown>) => {
-    console.log(formatIndexSummary(await cmdIndex(root())));
+    console.log(formatIndexSummary(await cmdIndex(root()), getLang(root())));
     if (!opts['watch']) return;
     const db = requireDb(root());
     console.log('watching for changes… (ctrl+c to stop)');
@@ -64,13 +65,16 @@ program
       db,
       onCycle: (c) => {
         console.log(
-          formatIndexSummary({
-            filesSeen: c.index.filesSeen,
-            filesIndexed: c.index.filesIndexed,
-            filesDeleted: c.index.filesDeleted,
-            symbolsChanged: c.index.diffs.length,
-            staleness: c.staleness,
-          }),
+          formatIndexSummary(
+            {
+              filesSeen: c.index.filesSeen,
+              filesIndexed: c.index.filesIndexed,
+              filesDeleted: c.index.filesDeleted,
+              symbolsChanged: c.index.diffs.length,
+              staleness: c.staleness,
+            },
+            getLang(root()),
+          ),
         );
       },
       onError: (e) => console.error('watch error:', e instanceof Error ? e.message : e),
@@ -190,7 +194,7 @@ program
   .command('stale')
   .description('review queue: memories whose anchored code has changed')
   .action(() => {
-    console.log(formatStale(cmdStale(root())));
+    console.log(formatStale(cmdStale(root()), getLang(root())));
   });
 
 program

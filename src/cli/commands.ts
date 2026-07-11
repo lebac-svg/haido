@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { configPath, loadConfig, STARTER_TOML } from '../core/config.js';
 import { openDb, type Db } from '../core/db.js';
+import type { Lang } from '../core/lang.js';
 import { dbPath, ensureWorkspace, haidoDir, workspaceExists } from '../core/workspace.js';
 import { buildVizHtml } from '../viz/html.js';
 import { mineCoChange, type CoChangeResult } from '../git/cochange.js';
@@ -35,6 +36,10 @@ export interface IndexSummary {
   staleness: StalenessReport;
   coChange?: CoChangeResult;
   wroteConfig?: boolean;
+}
+
+export function getLang(root: string): Lang {
+  return loadConfig(root).config.ui.lang;
 }
 
 export function requireDb(root: string): Db {
@@ -118,6 +123,7 @@ export function cmdRecall(
       ...(q.file !== undefined ? { file: q.file } : {}),
       ...(q.query !== undefined ? { query: q.query } : {}),
       ...(q.budget !== undefined ? { budgetTokens: q.budget } : {}),
+      lang: getLang(root),
     });
   } finally {
     db.close();
@@ -130,6 +136,7 @@ export function cmdRelated(root: string, target: string, limit?: number): string
     const rows = findRelated(db, {
       ...(target.includes('#') ? { symbol: target } : { file: target }),
       ...(limit !== undefined ? { limit } : {}),
+      lang: getLang(root),
     });
     if (rows.length === 0) return '(no related files found — is the path repo-relative?)';
     return rows.map((r) => `- ${r.path} — ${r.reasons.join(', ')}`).join('\n');
@@ -141,7 +148,10 @@ export function cmdRelated(root: string, target: string, limit?: number): string
 export function cmdOverview(root: string, budget?: number): string {
   const db = requireDb(root);
   try {
-    return mapOverview(db, budget !== undefined ? { budgetTokens: budget } : {});
+    return mapOverview(db, {
+      ...(budget !== undefined ? { budgetTokens: budget } : {}),
+      lang: getLang(root),
+    });
   } finally {
     db.close();
   }
@@ -207,7 +217,7 @@ export function cmdImportPack(root: string, dir: string): PackImportResult {
 export function cmdViz(root: string, out?: string): string {
   const db = requireDb(root);
   try {
-    const html = buildVizHtml(buildVizJson(db), path.basename(root));
+    const html = buildVizHtml(buildVizJson(db), path.basename(root), getLang(root));
     const file = out ?? path.join(haidoDir(root), 'map.html');
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, html);

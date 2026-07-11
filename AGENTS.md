@@ -1,24 +1,40 @@
-# Luật làm việc cho AI agent trong repo haido
+# Working rules for AI agents in the haido repo
 
-Repo này xây một công cụ trí nhớ cho AI — nên chính agent làm việc ở đây phải là hình mẫu của kỷ luật đó.
+This repo builds a memory tool for AI — so any agent working here must model the very
+discipline it ships.
 
-## Đọc trước khi làm (theo thứ tự)
+## Read before touching anything (in order)
 
-1. `docs/SPEC.md` — sản phẩm là gì, phạm vi v0.1, các quyết định đã chốt (§14).
-2. `docs/ARCHITECTURE.md` — thiết kế kỹ thuật + ADR; đừng phát minh lại điều đã quyết.
-3. `docs/QUALITY.md` — hiến pháp chất lượng: 3 vòng phản chiếu, definition of done.
-4. `docs/memory/` — nhật ký hải trình: quyết định/bất biến/bẫy còn hiệu lực. **Đọc hết trước khi sửa code.**
+1. `docs/DESIGN.md` — what haido is and is not (EN overview).
+2. `docs/QUALITY.md` — the engineering constitution: reflection loops, definition of done.
+3. `docs/memory/` — the project's logbook: decisions/invariants/gotchas still in force.
+   **Read all of it before editing code.**
+4. Full design docs (Vietnamese originals): `docs/vi/SPEC.md`, `docs/vi/ARCHITECTURE.md`,
+   `docs/vi/SURVEY.md`.
 
-## Luật cứng
+## Hard rules
 
-- **`npm run check` phải xanh trước khi kết thúc mọi phiên có sửa code.** Đỏ thì đọc output thật rồi sửa tận gốc — không sửa test cho qua, không skip.
-- **Tự phê phải có neo:** chỉ kết luận "sai/đúng" dựa trên tín hiệu khách quan (test, tsc, eslint, số đo, hành vi chạy thật) — không "soi chay" rồi viết lại theo cảm giác.
-- **Spec là luật:** làm lệch SPEC/ARCHITECTURE thì hoặc sửa code cho khớp, hoặc đề xuất diff sửa spec để user duyệt. Không lệch âm thầm, không tự sửa quyết định ở SPEC §14.
-- **Nghi thức cuối phiên** (QUALITY §4): tự vấn có quyết định/bẫy/bất biến mới không → ghi vào `docs/memory/` đúng format (frontmatter + why + anchor). Đây là bản thủ công của tính năng Stop-hook tương lai.
-- **Không tạo file `CLAUDE.md`** trong repo này (yêu cầu riêng của chủ dự án — file này gây trùng khi mở terminal).
-- Trao đổi với user bằng **tiếng Việt** (xưng "tôi", gọi "bạn"). Code, comment, commit message bằng tiếng Anh.
-- Commit chỉ khi user yêu cầu. Không push/publish (npm, GitHub) khi chưa được lệnh.
+- **`npm run check` must be green before ending any session that touched code.** Red means
+  read the real output and fix the root cause — never weaken a test, never skip.
+- **Critique needs an anchor:** conclude "right/wrong" only from objective signals (tests,
+  tsc, eslint, measurements, live behavior) — no vibes-driven rewrites.
+- **The spec is law:** if behavior deviates from `docs/vi/SPEC.md`/`ARCHITECTURE.md`, either
+  fix the code or propose a spec diff for the owner to approve. No silent drift; never edit
+  the settled decisions in SPEC §14 on your own.
+- **Commits are gated:** condition any commit on the check's exit code (`m_boot_010`), and
+  commit/push/publish only when the owner asks.
+- **End-of-session ritual** (QUALITY §4): new decisions/traps/invariants → record them in
+  `docs/memory/` in the pack format (frontmatter + why + anchor), then
+  `node dist/cli.js import --pack docs/memory` to sync the self-hosted database.
+- **Do NOT create a `CLAUDE.md` file** in this repo (owner's explicit requirement).
+- **Vietnamese content goes through MCP or pack files, never PowerShell CLI args**
+  (`m_boot_013` — console encoding mangles diacritics).
+- The owner speaks Vietnamese: converse with them in Vietnamese (xưng "tôi", gọi "bạn").
+  Code, comments, and commit messages are English. Public docs are English-first;
+  this repo's memory pack stays in the team's language (currently Vietnamese).
 
-## Bối cảnh cạnh tranh (để khỏi đi lạc hướng)
+## Competitive context (so you don't drift off course)
 
-Không biến haido thành code-graph server — mảng đó đã có `codebase-memory-mcp` (29.5k⭐) làm tốt. Giá trị của haido nằm ở **vòng đời trí nhớ**: neo bằng hash → tự phát hiện lỗi thời → review → reanchor. Chi tiết: `docs/SURVEY.md` §9–11.
+Do not turn haido into yet another code-graph server — that niche is owned by a 29k-star
+tool. haido's value is the **memory lifecycle**: hash anchors → self-detected staleness →
+review → reanchor. Details: `docs/vi/SURVEY.md` §9–11.

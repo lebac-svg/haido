@@ -1,7 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { loadConfig } from '../core/config.js';
 import { openDb, type Db } from '../core/db.js';
+import type { Lang } from '../core/lang.js';
 import { dbPath, workspaceExists } from '../core/workspace.js';
 import { indexRepo } from '../indexer/indexer.js';
 import { confirmMemory, moveAnchor, retireMemory } from '../memory/reanchor.js';
@@ -32,8 +34,9 @@ const errText = (
 });
 
 /** Build the MCP server around an open DB (exported separately for contract tests). */
-export function buildServer(ctx: { db: Db }): McpServer {
+export function buildServer(ctx: { db: Db; lang?: Lang }): McpServer {
   const { db } = ctx;
+  const lang = ctx.lang ?? 'en';
   const server = new McpServer({ name: 'haido', version: VERSION });
 
   server.registerTool(
@@ -59,6 +62,7 @@ export function buildServer(ctx: { db: Db }): McpServer {
           ...(args.symbol !== undefined ? { symbol: args.symbol } : {}),
           ...(args.query !== undefined ? { query: args.query } : {}),
           budgetTokens: args.budget_tokens ?? 800,
+          lang,
         });
         return text(r.text);
       } catch (e) {
@@ -132,6 +136,7 @@ export function buildServer(ctx: { db: Db }): McpServer {
           ...(args.file !== undefined ? { file: args.file } : {}),
           ...(args.symbol !== undefined ? { symbol: args.symbol } : {}),
           limit: args.limit ?? 8,
+          lang,
         });
         if (rows.length === 0) return text('(no related files found — is the path repo-relative?)');
         return text(rows.map((r) => `- ${r.path} — ${r.reasons.join(', ')}`).join('\n'));
@@ -154,7 +159,7 @@ export function buildServer(ctx: { db: Db }): McpServer {
     },
     (args) => {
       try {
-        return text(mapOverview(db, { budgetTokens: args.budget_tokens ?? 1500 }));
+        return text(mapOverview(db, { budgetTokens: args.budget_tokens ?? 1500, lang }));
       } catch (e) {
         return errText(e);
       }
@@ -174,7 +179,7 @@ export function buildServer(ctx: { db: Db }): McpServer {
     },
     () => {
       try {
-        return text(formatStale(listNeedsReview(db)));
+        return text(formatStale(listNeedsReview(db), lang));
       } catch (e) {
         return errText(e);
       }
@@ -229,7 +234,7 @@ export async function serveStdio(root: string): Promise<void> {
   const db = openDb(dbPath(root));
   await indexRepo({ root, db });
   reconcileAnchors(db);
-  const server = buildServer({ db });
+  const server = buildServer({ db, lang: loadConfig(root).config.ui.lang });
   await server.connect(new StdioServerTransport());
   console.error(`haido MCP server ready — root: ${root}`);
 }

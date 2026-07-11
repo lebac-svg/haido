@@ -91,7 +91,10 @@ describe('recall ranking', () => {
     const convIndex = r.hits.findIndex((h) => h.memory.id === conv);
     expect(invIndex).toBeGreaterThan(convIndex); // penalty pushed it down...
     expect(invIndex).not.toBe(-1); // ...but never hidden
-    expect(r.text).toContain('CẦN-REVIEW');
+    expect(r.text).toContain('NEEDS-REVIEW'); // default lang = en
+
+    const vi = recall(db, { file: 'src/index.ts', lang: 'vi' });
+    expect(vi.text).toContain('CẦN-REVIEW'); // vi opt-in works too
   });
 
   it('token budget cuts the list but always keeps the top hit', () => {
@@ -106,13 +109,13 @@ describe('findRelated', () => {
   it('explains import edges in both directions and same-dir', () => {
     const forIndex = findRelated(db, { file: 'src/index.ts' });
     expect(forIndex.map((r) => r.path).sort()).toEqual(['src/board.ts', 'src/utils.ts']);
-    expect(forIndex[0]?.reasons[0]).toBe('import');
+    expect(forIndex[0]?.reasons[0]).toBe('imports');
 
     const forBoard = findRelated(db, { file: 'src/board.ts' });
     const back = forBoard.find((r) => r.path === 'src/index.ts');
-    expect(back?.reasons).toContain('được import bởi');
+    expect(back?.reasons).toContain('imported by');
     const sameDir = forBoard.find((r) => r.path === 'src/utils.ts');
-    expect(sameDir?.reasons).toContain('cùng thư mục');
+    expect(sameDir?.reasons).toContain('same directory');
   });
 
   it('accepts a symbol and uses its file', () => {
@@ -126,9 +129,10 @@ describe('mapOverview', () => {
     seed();
     const text = mapOverview(db);
     expect(text).toContain('src/');
-    expect(text).toContain('3 file');
+    expect(text).toContain('3 files');
     expect(text).toContain('INVARIANT');
     expect(text).toContain('Toạ độ 0-based');
+    expect(mapOverview(db, { lang: 'vi' })).toContain('Bản đồ dự án');
   });
 
   it('respects a small token budget by trimming', () => {

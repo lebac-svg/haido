@@ -4,7 +4,7 @@ type: invariant
 status: fresh
 anchors:
   - { kind: file, path: 'experiments/hooks-probe/FINDINGS.md' }
-  - { kind: file, path: 'docs/ARCHITECTURE.md' }
+  - { kind: file, path: 'docs/vi/ARCHITECTURE.md' }
 created: 2026-07-10
 author: agent:claude
 ---

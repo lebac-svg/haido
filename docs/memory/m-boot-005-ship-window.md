@@ -3,7 +3,7 @@ id: m_boot_005
 type: gotcha
 status: fresh
 anchors:
-  - { kind: file, path: 'docs/SURVEY.md' }
+  - { kind: file, path: 'docs/vi/SURVEY.md' }
 created: 2026-07-10
 author: human:daiba + agent:claude
 ---

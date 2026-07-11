@@ -16,3 +16,6 @@
 [recall]
 # budget_tokens = 800            # ngân sách token mỗi lần hook tiêm theo file
 # overview_budget_tokens = 1500  # ngân sách cho bản đồ đầu phiên
+
+[ui]
+lang = "vi"
