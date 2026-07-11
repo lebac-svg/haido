@@ -14,7 +14,7 @@ const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 
 interface MapFrame {
   data: { files: Array<{ path: string }>; memories: Array<{ id: string }> };
-  hot: { files: string[]; mems: string[]; agent: string[] };
+  hot: { files: string[]; mems: string[]; agent: string[]; injected: string[] };
 }
 
 /** Incremental SSE parser: next() resolves with the next `event: map` payload. */
@@ -172,6 +172,30 @@ describe('haido viz --live', () => {
       expect(frame.hot.agent).not.toContain('src/utils.ts'); // unstamped → human/other
     },
   );
+
+  it('hook-stamped injections reach the page as hot.injected (recall made visible)', async () => {
+    const { id } = remember(db, {
+      type: 'invariant',
+      title: 'Injected on camera',
+      body: 'x',
+      why: 'recall must be visible on the bridge',
+      anchors: [{ file: 'src/board.ts' }],
+      author: 'test',
+    });
+    handle = await serveLiveViz({ root: tmp, db, port: 0, watch: false, pollMs: 40 });
+    const res = await fetch(new URL('/events', handle.url));
+    const next = sseCollector(res.body as ReadableStream<Uint8Array>);
+    await next(); // snapshot
+
+    const sessionDir = path.join(tmp, '.haido', 'session');
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(
+      path.join(sessionDir, 'sess-inject.json'),
+      JSON.stringify({ injected: [id], lastInject: { [id]: Date.now() } }),
+    );
+    const frame = await next();
+    expect(frame.hot.injected).toContain(id);
+  });
 
   it('readAgentTouches merges session states and keeps the freshest stamp', () => {
     const dir = path.join(tmp, '.haido', 'session');

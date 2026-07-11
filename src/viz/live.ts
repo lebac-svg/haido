@@ -73,6 +73,8 @@ const DEFAULT_PORT = 6160;
 
 /** A hot file counts as agent-edited when a hook touch landed within this window. */
 const AGENT_WINDOW_MS = 20_000;
+/** Injections older than this never re-announce (fresh page loads stay calm). */
+const INJECT_WINDOW_MS = 30_000;
 
 /**
  * Who just edited? The Claude Code PostToolUse hook stamps every Edit/Write
@@ -82,24 +84,34 @@ const AGENT_WINDOW_MS = 20_000;
  * renders as plain (human) activity.
  */
 export function readAgentTouches(root: string): Map<string, number> {
+  return readSessionStamps(root, 'lastTouch');
+}
+
+/** Memory ids the hooks recently injected into the agent's context (id → ms). */
+export function readAgentInjects(root: string): Map<string, number> {
+  return readSessionStamps(root, 'lastInject');
+}
+
+function readSessionStamps(root: string, field: 'lastTouch' | 'lastInject'): Map<string, number> {
   const out = new Map<string, number>();
   try {
     const dir = path.join(haidoDir(root), 'session');
     for (const name of readdirSync(dir)) {
       if (!name.endsWith('.json')) continue;
       try {
-        const parsed = JSON.parse(readFileSync(path.join(dir, name), 'utf8')) as {
-          lastTouch?: Record<string, number>;
-        };
-        for (const [p, ts] of Object.entries(parsed.lastTouch ?? {})) {
-          if (typeof ts === 'number' && ts > (out.get(p) ?? 0)) out.set(p, ts);
+        const parsed = JSON.parse(readFileSync(path.join(dir, name), 'utf8')) as Record<
+          string,
+          Record<string, number> | undefined
+        >;
+        for (const [k, ts] of Object.entries(parsed[field] ?? {})) {
+          if (typeof ts === 'number' && ts > (out.get(k) ?? 0)) out.set(k, ts);
         }
       } catch {
         // one unreadable state file must not kill attribution for the rest
       }
     }
   } catch {
-    // no session dir yet — nothing agent-touched
+    // no session dir yet — hooks never ran here
   }
   return out;
 }
@@ -114,22 +126,36 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
   let htmlCache: string | null = null;
   const clients = new Set<ServerResponse>();
 
-  const frameFor = (data: VizData, files: string[], mems: string[], agent: string[]): string =>
-    `event: map\ndata: ${JSON.stringify({ data, hot: { files, mems, agent } })}\n\n`;
+  const frameFor = (
+    data: VizData,
+    files: string[],
+    mems: string[],
+    agent: string[],
+    injected: string[],
+  ): string =>
+    `event: map\ndata: ${JSON.stringify({ data, hot: { files, mems, agent, injected } })}\n\n`;
 
-  const commit = (nextJson: string, next: VizData, hotFiles: string[], hotMems: string[]): void => {
+  const commit = (
+    nextJson: string,
+    next: VizData,
+    hotFiles: string[],
+    hotMems: string[],
+    injected: string[] = [],
+  ): void => {
     const known = new Set(next.files.map((f) => f.path));
     const knownMems = new Set(next.memories.map((m) => m.id));
     const files = [...new Set(hotFiles)].filter((p) => known.has(p));
     const mems = [...new Set(hotMems)].filter((id) => knownMems.has(id));
-    if (nextJson === json && files.length === 0 && mems.length === 0) return;
+    const injects = [...new Set(injected)].filter((id) => knownMems.has(id));
+    if (nextJson === json && files.length === 0 && mems.length === 0 && injects.length === 0)
+      return;
     const touches = files.length > 0 ? readAgentTouches(root) : new Map<string, number>();
     const cutoff = Date.now() - AGENT_WINDOW_MS;
     const agent = files.filter((p) => (touches.get(p) ?? 0) >= cutoff);
     json = nextJson;
     parsed = next;
     htmlCache = null;
-    const frame = frameFor(next, files, mems, agent);
+    const frame = frameFor(next, files, mems, agent, injects);
     for (const res of clients) res.write(frame);
     opts.onUpdate?.({ changedFiles: files, changedMemories: mems, clients: clients.size });
   };
@@ -176,13 +202,29 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
   }
 
   // --- change source 2: other connections (MCP server, second terminal) ---
+  // --- change source 3: recall injections stamped by the hooks (session files) ---
   let dataVersion = db.pragma('data_version', { simple: true }) as number;
+  const sentInjects = new Map<string, number>();
   const poll = setInterval(() => {
     try {
       const v = db.pragma('data_version', { simple: true }) as number;
-      if (v === dataVersion) return;
-      dataVersion = v;
-      refresh();
+      if (v !== dataVersion) {
+        dataVersion = v;
+        refresh();
+      }
+      const injects = readAgentInjects(root);
+      const cutoff = Date.now() - INJECT_WINDOW_MS;
+      const fresh: string[] = [];
+      for (const [id, ts] of injects) {
+        if (ts >= cutoff && ts > (sentInjects.get(id) ?? 0)) {
+          sentInjects.set(id, ts);
+          fresh.push(id);
+        }
+      }
+      if (fresh.length > 0) {
+        const { nextJson, next } = rebuild();
+        commit(nextJson, next, [], [], fresh);
+      }
     } catch (e) {
       opts.onError?.(e);
     }
@@ -207,7 +249,7 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
         Connection: 'keep-alive',
       });
       res.write('retry: 1500\n\n');
-      res.write(frameFor(parsed, [], [], []));
+      res.write(frameFor(parsed, [], [], [], []));
       clients.add(res);
       req.on('close', () => clients.delete(res));
       return;

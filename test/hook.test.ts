@@ -87,13 +87,17 @@ describe('claude-code hook runner', () => {
     expect(ctx).toContain('reanchor');
   });
 
-  it('post-tool Edit stamps lastTouch — the live map attributes the glow to the agent', async () => {
+  it('post-tool Edit stamps lastTouch and lastInject — the live map shows both', async () => {
     const abs = path.join(tmp, 'src', 'board.ts');
     await runHook('post-tool', tmp, payload({ tool_name: 'Edit', tool_input: { file_path: abs } }));
     const state = JSON.parse(
       readFileSync(path.join(tmp, '.haido', 'session', 'sess-1.json'), 'utf8'),
-    ) as { lastTouch?: Record<string, number> };
+    ) as { lastTouch?: Record<string, number>; lastInject?: Record<string, number> };
     expect(typeof state.lastTouch?.['src/board.ts']).toBe('number');
+    // the anchored note got injected on this touch — its stamp makes recall visible
+    const injected = Object.values(state.lastInject ?? {});
+    expect(injected.length).toBeGreaterThan(0);
+    expect(typeof injected[0]).toBe('number');
   });
 
   it('stop blocks once with a reflection prompt after real edits, then stays silent', async () => {

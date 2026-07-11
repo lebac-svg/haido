@@ -47,6 +47,8 @@ interface SessionState {
   touched?: string[];
   /** Last Edit/Write per file (ms) — lets the live map color agent edits differently. */
   lastTouch?: Record<string, number>;
+  /** Last injection per memory id (ms) — the live map shows recall actually happening. */
+  lastInject?: Record<string, number>;
   /** The reflection nudge fired — at most once per session. */
   stopNudged?: boolean;
 }
@@ -162,6 +164,8 @@ export async function runHook(
       });
       if (result.hits.length > 0) {
         state.injected.push(...result.hits.map((h) => h.memory.id));
+        state.lastInject ??= {};
+        for (const h of result.hits) state.lastInject[h.memory.id] = Date.now();
         dirty = true;
       }
       if (dirty) saveState(root, sessionId, state);

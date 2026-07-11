@@ -40,7 +40,15 @@ mkdirSync(sessionDir, { recursive: true });
 function stampAgent(files) {
   const lastTouch = {};
   for (const f of files) lastTouch[f] = Date.now();
-  writeFileSync(path.join(sessionDir, 'demo.json'), JSON.stringify({ injected: [], lastTouch }));
+  // also stamp an injection so the GIF shows recall happening (🤖 in the feed)
+  writeFileSync(
+    path.join(sessionDir, 'demo.json'),
+    JSON.stringify({
+      injected: ['m_boot_014'],
+      lastTouch,
+      lastInject: { m_boot_014: Date.now() },
+    }),
+  );
 }
 function touch(rel) {
   appendFileSync(path.join(REPO, rel), `\n// demo touch ${Date.now()}\n`);

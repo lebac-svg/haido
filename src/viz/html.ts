@@ -67,6 +67,9 @@ const EN_PAIRS: ReadonlyArray<readonly [string, string]> = [
     'still true → --confirm · no longer true → --retire · code moved → --move',
   ],
   ['Nhật ký hải trình', "Ship's log"],
+  ['mọi ghi chú đều khớp code', 'every note matches the code'],
+  ['tiêm cho agent: ', 'injected into the agent: '],
+  ['tiêm ghi chú: ', 'note injected: '],
   ['Trạm review', 'Review station'],
   ['chép lệnh', 'copy command'],
   ['đã chép ✓', 'copied ✓'],
@@ -151,15 +154,15 @@ const TEMPLATE = `<!doctype html>
   main.bridge {
     flex: 1; min-height: 0; padding: 14px 10px 10px; gap: 12px;
     display: grid;
-    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1.35fr) auto minmax(0, 1fr);
-    grid-template-areas: "globe chart" "alarm alarm" "deck deck";
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 210px;
+    grid-template-rows: minmax(0, 1.35fr) minmax(0, 1fr);
+    grid-template-areas: "globe chart review" "deck deck review";
   }
   body.maponly main.bridge {
     grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr);
     grid-template-areas: "chart"; gap: 0;
   }
-  body.maponly #deck, body.maponly #globeFrame { display: none; }
+  body.maponly #deck, body.maponly #globeFrame, body.maponly #reviewFrame { display: none; }
   .frame {
     position: relative; border: 1px solid var(--hair); background: var(--surface);
     min-height: 0; min-width: 0; display: flex; flex-direction: column;
@@ -173,10 +176,11 @@ const TEMPLATE = `<!doctype html>
   #globeFrame { grid-area: globe; }
   #chartFrame { grid-area: chart; }
   #deck { grid-area: deck; display: flex; gap: 12px; min-height: 0; }
-  /* the alarm instrument: absent in calm seas, lights up when knowledge drifts */
-  #reviewFrame { grid-area: alarm; display: none; max-height: 216px; border-color: rgba(250,178,25,0.4); }
-  #reviewFrame > .plate { color: var(--warn); }
-  body.hasreview #reviewFrame { display: flex; }
+  /* the review rail: calm gauge in fair seas, amber alarm when knowledge drifts */
+  #reviewFrame { grid-area: review; }
+  body.hasreview #reviewFrame { border-color: rgba(250,178,25,0.4); }
+  body.hasreview #reviewFrame > .plate { color: var(--warn); }
+  .empty { color: var(--ink-3); padding: 8px 0; }
   .rv { border: 1px solid var(--hair); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
   .rv .t { color: var(--ink); font-weight: 600; cursor: pointer; }
   .rv .t:hover { text-decoration: underline; }
@@ -215,7 +219,6 @@ const TEMPLATE = `<!doctype html>
 
   #inspector h2 { font-size: 13px; color: var(--ink); word-break: break-all; }
   #inspector .meta { color: var(--ink-3); margin: 4px 0 10px; }
-  #inspector .empty { color: var(--ink-3); padding: 8px 0; }
   .mem {
     border: 1px solid var(--hair); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
     cursor: pointer;
@@ -258,7 +261,7 @@ const TEMPLATE = `<!doctype html>
     #globeFrame { height: 46vh; flex: none; }
     #chartFrame { height: 46vh; flex: none; }
     #deck { flex: none; flex-direction: column; }
-    #feedFrame, #inspectFrame, #logFrame { height: 250px; }
+    #feedFrame, #inspectFrame, #logFrame, #reviewFrame { height: 250px; }
   }
 </style>
 </head>
@@ -323,6 +326,7 @@ const TEMPLATE = `<!doctype html>
   var byId = {}, memById = {};
   var dirs = [], dirColor = {}, perDir = {}, paletteUsed = 0, nextIdx = 0;
   var HEAT_MS = 8000, ENTER_MS = 450, EXIT_MS = 650, RIPPLE_MS = 900;
+  var injectCount = 0; // notes pushed into the agent's context while this page watched
   var frameNow = 0;
 
   function radiusOf(symbols) { return Math.min(18, 4 + Math.sqrt(symbols || 0) * 1.6); }
@@ -437,7 +441,7 @@ const TEMPLATE = `<!doctype html>
         anchors: (m.anchors || []), files: [],
         r: 5, seeded: false,
         x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
-        born: first ? -1e9 : now, hotAt: first ? -1e9 : now, dying: 0,
+        born: first ? -1e9 : now, hotAt: first ? -1e9 : now, hotSrc: '', dying: 0,
         sx: 0, sy: 0, sr: 0, sOn: false,
         gx: 0, gy: 0, gr: 0, gdepth: 1, gOn: false
       };
@@ -495,11 +499,23 @@ const TEMPLATE = `<!doctype html>
         if (byId[p]) { byId[p].hotAt = now; byId[p].hotSrc = ''; }
       });
       (hot.agent || []).forEach(function (p) { if (byId[p]) byId[p].hotSrc = 'agent'; });
-      (hot.mems || []).forEach(function (id) { if (memById[id]) memById[id].hotAt = now; });
+      (hot.mems || []).forEach(function (id) {
+        if (memById[id]) { memById[id].hotAt = now; memById[id].hotSrc = ''; }
+      });
       (hot.files || []).forEach(function (p) {
         var n2 = byId[p];
         if (n2 && !n2.dying && n2.born < now - 1) {
           events.push(n2.hotSrc === 'agent' ? ['⚡', 'agent', p, p] : ['✎', '', p, p]);
+        }
+      });
+      // recall made visible: the hook injected these notes into the agent's context
+      (hot.injected || []).forEach(function (id) {
+        var mi2 = memById[id];
+        if (mi2 && !mi2.dying) {
+          mi2.hotAt = now;
+          mi2.hotSrc = 'agent';
+          injectCount++;
+          events.push(['🤖', 'agent', 'tiêm ghi chú: ' + mi2.title, id]);
         }
       });
     }
@@ -626,8 +642,11 @@ const TEMPLATE = `<!doctype html>
     var box = document.getElementById('review');
     var list = mems.filter(function (m) { return !m.dying && m.status === 'needs_review'; });
     document.body.classList.toggle('hasreview', list.length > 0);
-    if (list.length === 0) { box.innerHTML = ''; return; }
-    var html = '';
+    var html = LIVE ? '<div class="hint2">🤖 tiêm cho agent: ' + injectCount + '</div>' : '';
+    if (list.length === 0) {
+      box.innerHTML = html + '<div class="empty">✅ mọi ghi chú đều khớp code</div>';
+      return;
+    }
     list.forEach(function (m) {
       var cmd = 'haido reanchor ' + m.id + ' --confirm';
       html += '<div class="rv">' +
@@ -1143,18 +1162,20 @@ const TEMPLATE = `<!doctype html>
         }
         drawDiamond(ctx, m.sx, m.sy, mr, m.status === 'needs_review' ? '#fab219' : '#e8e6da', mRecede);
         if (mhv > 0.01) {
+          // cyan pulse = this note was just INJECTED into the agent's context
+          var mc = m.hotSrc === 'agent' ? '87,199,255' : '255,255,255';
           ctx.beginPath();
           ctx.moveTo(m.sx, m.sy - mr); ctx.lineTo(m.sx + mr, m.sy);
           ctx.lineTo(m.sx, m.sy + mr); ctx.lineTo(m.sx - mr, m.sy);
           ctx.closePath();
-          ctx.fillStyle = 'rgba(255,255,255,' + (0.5 * mhv) + ')'; ctx.fill();
+          ctx.fillStyle = 'rgba(' + mc + ',' + (0.5 * mhv) + ')'; ctx.fill();
           ctx.beginPath(); ctx.arc(m.sx, m.sy, mr + 3 + 6 * mhv, 0, 7);
-          ctx.strokeStyle = 'rgba(255,255,255,' + (0.55 * mhv) + ')';
+          ctx.strokeStyle = 'rgba(' + mc + ',' + (0.55 * mhv) + ')';
           ctx.lineWidth = 1.5 + 2 * mhv; ctx.stroke();
           var mrt = (frameNow - m.hotAt) / RIPPLE_MS;
           if (!NO_MOTION && mrt >= 0 && mrt < 1) {
             ctx.beginPath(); ctx.arc(m.sx, m.sy, mr + 6 + mrt * 40, 0, 7);
-            ctx.strokeStyle = 'rgba(255,255,255,' + (0.4 * (1 - mrt)) + ')';
+            ctx.strokeStyle = 'rgba(' + mc + ',' + (0.4 * (1 - mrt)) + ')';
             ctx.lineWidth = 1.5; ctx.stroke();
           }
         }
@@ -1271,6 +1292,12 @@ const TEMPLATE = `<!doctype html>
         gtx.globalAlpha = (0.4 + 0.6 * m.gdepth) * fadeK(m) * (mRecede ? 0.15 : 1);
         drawDiamond(gtx, m.gx, m.gy, Math.max(2, m.gr * 0.8),
           m.status === 'needs_review' ? '#fab219' : '#e8e6da', false);
+        if (mhv > 0.02) {
+          var gmc = m.hotSrc === 'agent' ? '87,199,255' : '255,255,255';
+          gtx.beginPath(); gtx.arc(m.gx, m.gy, Math.max(2, m.gr * 0.8) + 2 + 3 * mhv, 0, 7);
+          gtx.strokeStyle = 'rgba(' + gmc + ',' + (0.5 * mhv) + ')';
+          gtx.lineWidth = 1.2; gtx.stroke();
+        }
         if (m === selected || mFocus) {
           gtx.beginPath(); gtx.arc(m.gx, m.gy, Math.max(2, m.gr * 0.8) + 5, 0, 7);
           gtx.strokeStyle = 'rgba(255,255,255,0.55)'; gtx.lineWidth = 1.3; gtx.stroke();
