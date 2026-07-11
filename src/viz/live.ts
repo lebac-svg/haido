@@ -1,7 +1,9 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { Db } from '../core/db.js';
 import type { Lang } from '../core/lang.js';
+import { haidoDir } from '../core/workspace.js';
 import { watchRepo, type WatchHandle } from '../indexer/watch.js';
 import { buildVizJson } from './data.js';
 import { buildVizHtml } from './html.js';
@@ -69,6 +71,39 @@ interface VizData {
 
 const DEFAULT_PORT = 6160;
 
+/** A hot file counts as agent-edited when a hook touch landed within this window. */
+const AGENT_WINDOW_MS = 20_000;
+
+/**
+ * Who just edited? The Claude Code PostToolUse hook stamps every Edit/Write
+ * into `.haido/session/<id>.json` (`lastTouch`), so agent activity is the set
+ * of recently stamped paths; anything else that hits the watcher is a human
+ * (or another tool). Best-effort by design: no session files → everything
+ * renders as plain (human) activity.
+ */
+export function readAgentTouches(root: string): Map<string, number> {
+  const out = new Map<string, number>();
+  try {
+    const dir = path.join(haidoDir(root), 'session');
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.json')) continue;
+      try {
+        const parsed = JSON.parse(readFileSync(path.join(dir, name), 'utf8')) as {
+          lastTouch?: Record<string, number>;
+        };
+        for (const [p, ts] of Object.entries(parsed.lastTouch ?? {})) {
+          if (typeof ts === 'number' && ts > (out.get(p) ?? 0)) out.set(p, ts);
+        }
+      } catch {
+        // one unreadable state file must not kill attribution for the rest
+      }
+    }
+  } catch {
+    // no session dir yet — nothing agent-touched
+  }
+  return out;
+}
+
 export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle> {
   const { root, db } = opts;
   const lang: Lang = opts.lang ?? 'en';
@@ -79,8 +114,8 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
   let htmlCache: string | null = null;
   const clients = new Set<ServerResponse>();
 
-  const frameFor = (data: VizData, files: string[], mems: string[]): string =>
-    `event: map\ndata: ${JSON.stringify({ data, hot: { files, mems } })}\n\n`;
+  const frameFor = (data: VizData, files: string[], mems: string[], agent: string[]): string =>
+    `event: map\ndata: ${JSON.stringify({ data, hot: { files, mems, agent } })}\n\n`;
 
   const commit = (nextJson: string, next: VizData, hotFiles: string[], hotMems: string[]): void => {
     const known = new Set(next.files.map((f) => f.path));
@@ -88,10 +123,13 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
     const files = [...new Set(hotFiles)].filter((p) => known.has(p));
     const mems = [...new Set(hotMems)].filter((id) => knownMems.has(id));
     if (nextJson === json && files.length === 0 && mems.length === 0) return;
+    const touches = files.length > 0 ? readAgentTouches(root) : new Map<string, number>();
+    const cutoff = Date.now() - AGENT_WINDOW_MS;
+    const agent = files.filter((p) => (touches.get(p) ?? 0) >= cutoff);
     json = nextJson;
     parsed = next;
     htmlCache = null;
-    const frame = frameFor(next, files, mems);
+    const frame = frameFor(next, files, mems, agent);
     for (const res of clients) res.write(frame);
     opts.onUpdate?.({ changedFiles: files, changedMemories: mems, clients: clients.size });
   };
@@ -169,7 +207,7 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
         Connection: 'keep-alive',
       });
       res.write('retry: 1500\n\n');
-      res.write(frameFor(parsed, [], []));
+      res.write(frameFor(parsed, [], [], []));
       clients.add(res);
       req.on('close', () => clients.delete(res));
       return;

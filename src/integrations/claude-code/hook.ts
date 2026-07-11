@@ -45,6 +45,8 @@ interface SessionState {
   startedAt?: number;
   /** Repo-relative files Edit/Write-ed this session (feeds the Stop reflection). */
   touched?: string[];
+  /** Last Edit/Write per file (ms) — lets the live map color agent edits differently. */
+  lastTouch?: Record<string, number>;
   /** The reflection nudge fired — at most once per session. */
   stopNudged?: boolean;
 }
@@ -133,10 +135,10 @@ export async function runHook(
         payload.tool_name === 'MultiEdit'
       ) {
         state.touched ??= [];
-        if (!state.touched.includes(rel)) {
-          state.touched.push(rel);
-          dirty = true;
-        }
+        if (!state.touched.includes(rel)) state.touched.push(rel);
+        state.lastTouch ??= {};
+        state.lastTouch[rel] = Date.now();
+        dirty = true;
         await indexRepo({ root, db });
         const report = reconcileAnchors(db);
         for (const e of report.events) {

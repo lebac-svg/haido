@@ -54,6 +54,7 @@ const EN_PAIRS: ReadonlyArray<readonly [string, string]> = [
   ['đang theo dõi thay đổi', 'watching for changes'],
   ['Ghi chú neo ở đây (click để soi)', 'Notes anchored here (click to inspect)'],
   ['○ mất kết nối', '○ disconnected'],
+  ['agent vừa sửa', 'agent just edited'],
   ['tự kết nối lại…', 'reconnecting…'],
   ['● trực tiếp', '● live'],
   ['Chưa có ghi chú nào ở file này', 'No notes on this file yet'],
@@ -271,7 +272,7 @@ const TEMPLATE = `<!doctype html>
         r: radiusOf(f.symbols || 0),
         x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, idx: nextIdx++, pinned: false,
         nbr: {}, deg: 0,
-        born: first ? -1e9 : now, hotAt: first ? -1e9 : now, dying: 0,
+        born: first ? -1e9 : now, hotAt: first ? -1e9 : now, hotSrc: '', dying: 0,
         sx: 0, sy: 0, sr: 0, sdepth: 1, sOn: false
       };
       perDir[dir] = (perDir[dir] || 0) + 1;
@@ -353,7 +354,10 @@ const TEMPLATE = `<!doctype html>
 
     // server-sent heat: a comment-only save changes no structure but still glows
     if (hot) {
-      (hot.files || []).forEach(function (p) { if (byId[p]) byId[p].hotAt = now; });
+      (hot.files || []).forEach(function (p) {
+        if (byId[p]) { byId[p].hotAt = now; byId[p].hotSrc = ''; }
+      });
+      (hot.agent || []).forEach(function (p) { if (byId[p]) byId[p].hotSrc = 'agent'; });
       (hot.mems || []).forEach(function (id) { if (memById[id]) memById[id].hotAt = now; });
     }
 
@@ -437,6 +441,12 @@ const TEMPLATE = `<!doctype html>
       s2.innerHTML = htmlChip;
       legend.appendChild(s2);
     });
+    if (LIVE) {
+      var live1 = document.createElement('span');
+      live1.className = 'chip';
+      live1.innerHTML = '<span class="dot" style="background:#57c7ff"></span>agent vừa sửa';
+      legend.appendChild(live1);
+    }
   }
 
   // ---- animation: recent activity glows, newborns bloom, the deleted fade ----
@@ -803,16 +813,18 @@ const TEMPLATE = `<!doctype html>
       ctx.beginPath(); ctx.arc(n.sx, n.sy, n.sr, 0, 7);
       ctx.fillStyle = n.color; ctx.fill();
       if (hv > 0.01) {
-        // being worked on right now: white-hot core + halo + one launch ripple
+        // being worked on right now: hot core + halo + one launch ripple
+        // (white = a human/tool saved it; cyan = the agent's own edit — hook-attributed)
+        var hc = n.hotSrc === 'agent' ? '87,199,255' : '255,255,255';
         ctx.beginPath(); ctx.arc(n.sx, n.sy, n.sr, 0, 7);
-        ctx.fillStyle = 'rgba(255,255,255,' + (0.45 * hv) + ')'; ctx.fill();
+        ctx.fillStyle = 'rgba(' + hc + ',' + (0.45 * hv) + ')'; ctx.fill();
         ctx.beginPath(); ctx.arc(n.sx, n.sy, n.sr + 3 + 6 * hv, 0, 7);
-        ctx.strokeStyle = 'rgba(255,255,255,' + (0.55 * hv) + ')';
+        ctx.strokeStyle = 'rgba(' + hc + ',' + (0.55 * hv) + ')';
         ctx.lineWidth = 1.5 + 2 * hv; ctx.stroke();
         var rt = (frameNow - n.hotAt) / RIPPLE_MS;
         if (rt >= 0 && rt < 1) {
           ctx.beginPath(); ctx.arc(n.sx, n.sy, n.sr + 6 + rt * 46, 0, 7);
-          ctx.strokeStyle = 'rgba(255,255,255,' + (0.4 * (1 - rt)) + ')';
+          ctx.strokeStyle = 'rgba(' + hc + ',' + (0.4 * (1 - rt)) + ')';
           ctx.lineWidth = 1.5; ctx.stroke();
         }
       }

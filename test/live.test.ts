@@ -1,4 +1,4 @@
-import { appendFileSync, cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { appendFileSync, cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,13 +8,13 @@ import { dbPath, ensureWorkspace } from '../src/core/workspace.js';
 import { indexRepo } from '../src/indexer/indexer.js';
 import { remember } from '../src/memory/store.js';
 import { buildVizHtml } from '../src/viz/html.js';
-import { serveLiveViz, type LiveVizHandle } from '../src/viz/live.js';
+import { readAgentTouches, serveLiveViz, type LiveVizHandle } from '../src/viz/live.js';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 
 interface MapFrame {
   data: { files: Array<{ path: string }>; memories: Array<{ id: string }> };
-  hot: { files: string[]; mems: string[] };
+  hot: { files: string[]; mems: string[]; agent: string[] };
 }
 
 /** Incremental SSE parser: next() resolves with the next `event: map` payload. */
@@ -144,17 +144,40 @@ describe('haido viz --live', () => {
   });
 
   it(
-    'a file save flows through the watcher into a hot-file frame',
+    'a file save flows through the watcher into a hot-file frame, attributed to the agent',
     { timeout: 15_000 },
     async () => {
+      // a hook-stamped session state marks src/board.ts as an agent edit
+      const sessionDir = path.join(tmp, '.haido', 'session');
+      mkdirSync(sessionDir, { recursive: true });
+      writeFileSync(
+        path.join(sessionDir, 'sess-agent.json'),
+        JSON.stringify({ injected: [], lastTouch: { 'src/board.ts': Date.now() } }),
+      );
+
       handle = await serveLiveViz({ root: tmp, db, port: 0, debounceMs: 60, pollMs: 60_000 });
       const res = await fetch(new URL('/events', handle.url));
       const next = sseCollector(res.body as ReadableStream<Uint8Array>);
       await next();
 
       appendFileSync(path.join(tmp, 'src', 'board.ts'), '\nexport const nudge = 1;\n');
+      appendFileSync(path.join(tmp, 'src', 'utils.ts'), '\nexport const human = 1;\n');
       const frame = await next(12_000);
       expect(frame.hot.files).toContain('src/board.ts');
+      expect(frame.hot.files).toContain('src/utils.ts');
+      expect(frame.hot.agent).toContain('src/board.ts'); // hook-stamped → agent
+      expect(frame.hot.agent).not.toContain('src/utils.ts'); // unstamped → human/other
     },
   );
+
+  it('readAgentTouches merges session states and keeps the freshest stamp', () => {
+    const dir = path.join(tmp, '.haido', 'session');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(dir + '/a.json', JSON.stringify({ lastTouch: { 'x.ts': 100, 'y.ts': 5 } }));
+    writeFileSync(dir + '/b.json', JSON.stringify({ lastTouch: { 'y.ts': 900 } }));
+    writeFileSync(dir + '/broken.json', '{oops');
+    const touches = readAgentTouches(tmp);
+    expect(touches.get('x.ts')).toBe(100);
+    expect(touches.get('y.ts')).toBe(900);
+  });
 });
