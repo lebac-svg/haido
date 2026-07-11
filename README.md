@@ -56,7 +56,7 @@ haido viz --live --open   # leave it on a second monitor while your agent works
 
 ## Install
 
-Requires Node ≥ 20. A global install is recommended — the hooks invoke `haido` from your PATH.
+Requires Node ≥ 22.12. A global install is recommended — the hooks invoke `haido` from your PATH.
 
 ### With Claude Code (hooks + MCP — the full experience)
 

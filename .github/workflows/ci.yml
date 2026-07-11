@@ -11,7 +11,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        node: [20, 22]
+        # floor follows commander@15 (>=22.12); node 20 also lacks
+        # better-sqlite3 prebuilds on win32 → flaky source builds
+        node: [22, 24]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
