@@ -144,12 +144,15 @@ const TEMPLATE = `<!doctype html>
   main.bridge {
     flex: 1; min-height: 0; padding: 14px 10px 10px; gap: 12px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 380px;
-    grid-template-rows: minmax(0, 1fr) 224px;
-    grid-template-areas: "chart right" "deck right";
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1.35fr) minmax(0, 1fr);
+    grid-template-areas: "globe chart" "deck deck";
   }
-  body.maponly main.bridge { grid-template-columns: minmax(0,1fr) 0; grid-template-rows: minmax(0,1fr) 0; gap: 0; }
-  body.maponly #deck, body.maponly #right { display: none; }
+  body.maponly main.bridge {
+    grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr);
+    grid-template-areas: "chart"; gap: 0;
+  }
+  body.maponly #deck, body.maponly #globeFrame { display: none; }
   .frame {
     position: relative; border: 1px solid var(--hair); background: var(--surface);
     min-height: 0; min-width: 0; display: flex; flex-direction: column;
@@ -160,17 +163,15 @@ const TEMPLATE = `<!doctype html>
     font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
     color: var(--ink-3); border-left: 1px solid var(--hair); border-right: 1px solid var(--hair);
   }
+  #globeFrame { grid-area: globe; }
   #chartFrame { grid-area: chart; }
   #deck { grid-area: deck; display: flex; gap: 12px; min-height: 0; }
-  #right { grid-area: right; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-  #globeFrame { width: 300px; flex: none; }
   #feedFrame { flex: 1; }
-  #inspectFrame { flex: 1.25; }
+  #inspectFrame { flex: 1.3; }
   #logFrame { flex: 1; }
   .stage { position: relative; flex: 1; min-height: 0; }
   .stage canvas { position: absolute; inset: 0; cursor: grab; }
   .stage canvas.dragging { cursor: grabbing; }
-  #globeStage canvas { cursor: default; }
   .frame .body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; }
   .frame .body::-webkit-scrollbar { width: 8px; }
   .frame .body::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 4px; }
@@ -224,10 +225,10 @@ const TEMPLATE = `<!doctype html>
   @media (max-width: 1120px) {
     body { overflow: auto; }
     main.bridge { display: flex; flex-direction: column; }
-    #chartFrame { height: 62vh; flex: none; }
-    #deck { height: 220px; flex: none; }
-    #right { flex: none; }
-    #inspectFrame, #logFrame { height: 260px; }
+    #globeFrame { height: 46vh; flex: none; }
+    #chartFrame { height: 46vh; flex: none; }
+    #deck { flex: none; flex-direction: column; }
+    #feedFrame, #inspectFrame, #logFrame { height: 250px; }
   }
 </style>
 </head>
@@ -246,21 +247,19 @@ const TEMPLATE = `<!doctype html>
   <span id="legend"></span>
 </header>
 <main class="bridge">
+  <section class="frame" id="globeFrame">
+    <span class="plate">Địa cầu 3D</span>
+    <div class="stage" id="globeStage"><canvas id="globe"></canvas></div>
+  </section>
   <section class="frame" id="chartFrame">
     <span class="plate">Hải đồ 2D</span>
     <div class="stage" id="chartStage"><canvas id="canvas"></canvas><div id="tip"></div></div>
   </section>
   <div id="deck">
-    <section class="frame" id="globeFrame">
-      <span class="plate">Địa cầu 3D</span>
-      <div class="stage" id="globeStage"><canvas id="globe"></canvas></div>
-    </section>
     <section class="frame" id="feedFrame">
       <span class="plate">Đang diễn ra</span>
       <div class="body"><ul id="feed"></ul><div id="feedEmpty">(chỉ có ở chế độ --live — chạy haido viz --live)</div></div>
     </section>
-  </div>
-  <div id="right">
     <section class="frame" id="inspectFrame">
       <span class="plate">Soi chi tiết</span>
       <div class="body" id="inspector"></div>
@@ -630,6 +629,7 @@ const TEMPLATE = `<!doctype html>
   var W = 1200, H = 800, GW = 300, GH = 200;
   var cam = { x: 0, y: 0, k: 1 };
   var gOrb = { yaw: 0.6, pitch: 0.3, dist: 900 };
+  var gZoom = 1, gInteracting = false;
   var PERSP = 620;
   var dpr = Math.max(1, window.devicePixelRatio || 1);
   function sizeCanvas(cv, stage) {
@@ -711,7 +711,7 @@ const TEMPLATE = `<!doctype html>
     var y1 = ox * sy + oy * cy;
     var y2 = y1 * cp - oz * sp;
     var z2 = y1 * sp + oz * cp;
-    var d = z2 + gDist;
+    var d = z2 + gDist * gZoom;
     if (d < 80) { n.gOn = false; return; }
     // exact-fit scale (cloud ≈ 82% of the frame's short side), perspective only modulates
     var s = ((Math.min(GW, GH) * 0.41) / Math.max(1, gR)) * (gDist / d);
@@ -1091,7 +1091,7 @@ const TEMPLATE = `<!doctype html>
   function drawGlobe() {
     gtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     gtx.clearRect(0, 0, GW, GH);
-    if (!NO_MOTION) gOrb.yaw += 0.0035;
+    if (!NO_MOTION && !gInteracting) gOrb.yaw += 0.0035;
     var i, n, m;
     for (i = 0; i < nodes.length; i++) projectGlobe(nodes[i]);
     for (i = 0; i < mems.length; i++) projectGlobe(mems[i]);
@@ -1111,6 +1111,11 @@ const TEMPLATE = `<!doctype html>
       if (!n.gOn || !visible(n)) continue;
       var hv = heatOf(n);
       gtx.globalAlpha = (0.35 + 0.65 * n.gdepth) * fadeK(n);
+      if (n.mems.length > 0) {
+        gtx.beginPath(); gtx.arc(n.gx, n.gy, n.gr + 1.5, 0, 7);
+        gtx.strokeStyle = n.stale ? '#fab219' : 'rgba(255,255,255,0.8)';
+        gtx.lineWidth = 1.1; gtx.stroke();
+      }
       gtx.beginPath(); gtx.arc(n.gx, n.gy, n.gr, 0, 7);
       gtx.fillStyle = n.color; gtx.fill();
       if (hv > 0.02) {
@@ -1119,6 +1124,15 @@ const TEMPLATE = `<!doctype html>
         gtx.strokeStyle = 'rgba(' + hc + ',' + (0.5 * hv) + ')';
         gtx.lineWidth = 1.2; gtx.stroke();
       }
+      if (n === selected) {
+        gtx.beginPath(); gtx.arc(n.gx, n.gy, n.gr + 6, 0, 7);
+        gtx.strokeStyle = 'rgba(255,255,255,0.55)'; gtx.lineWidth = 1.3; gtx.stroke();
+      }
+      if (n === selected || hv > 0.25) {
+        gtx.font = '10px system-ui, sans-serif';
+        gtx.fillStyle = n === selected ? '#ffffff' : '#c3c2b7';
+        gtx.fillText(n.id.split('/').pop(), n.gx + n.gr + 5, n.gy + 3);
+      }
       gtx.globalAlpha = 1;
     }
     if (showMems) {
@@ -1126,9 +1140,19 @@ const TEMPLATE = `<!doctype html>
       for (i = 0; i < morder.length; i++) {
         m = morder[i];
         if (!m.gOn || !memVisible(m)) continue;
+        var mhv = heatOf(m);
         gtx.globalAlpha = (0.4 + 0.6 * m.gdepth) * fadeK(m);
         drawDiamond(gtx, m.gx, m.gy, Math.max(2, m.gr * 0.8),
           m.status === 'needs_review' ? '#fab219' : '#e8e6da', false);
+        if (m === selected) {
+          gtx.beginPath(); gtx.arc(m.gx, m.gy, Math.max(2, m.gr * 0.8) + 5, 0, 7);
+          gtx.strokeStyle = 'rgba(255,255,255,0.55)'; gtx.lineWidth = 1.3; gtx.stroke();
+        }
+        if (m === selected || mhv > 0.25) {
+          gtx.font = '10px system-ui, sans-serif';
+          gtx.fillStyle = m === selected ? '#ffffff' : '#c3c2b7';
+          gtx.fillText((TYPE_ICON[m.type] || '•') + ' ' + m.title, m.gx + m.gr + 5, m.gy + 3);
+        }
         gtx.globalAlpha = 1;
       }
     }
@@ -1231,6 +1255,60 @@ const TEMPLATE = `<!doctype html>
     cam.x = w[0] - (px - W / 2) / k2;
     cam.y = w[1] - (py - H / 2) / k2;
     cam.k = k2;
+  }, { passive: false });
+
+  // globe: drag = orbit, wheel = dolly, click = inspect (rotation pauses while held)
+  var gDragging = false, gLastX = 0, gLastY = 0, gMoved = false;
+  function gPick(px, py) {
+    var best = null, bestD = -1, i;
+    if (showMems) {
+      for (i = 0; i < mems.length; i++) {
+        var m = mems[i];
+        if (m.dying || !memVisible(m) || !m.gOn) continue;
+        if (Math.hypot(m.gx - px, m.gy - py) < Math.max(9, m.gr + 6) && m.gdepth > bestD) {
+          best = m; bestD = m.gdepth;
+        }
+      }
+      if (best) return best;
+    }
+    for (i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.dying || !visible(n) || !n.gOn) continue;
+      if (Math.hypot(n.gx - px, n.gy - py) < Math.max(10, n.gr + 5) && n.gdepth > bestD) {
+        best = n; bestD = n.gdepth;
+      }
+    }
+    return best;
+  }
+  globeCanvas.addEventListener('mousedown', function (ev) {
+    gDragging = true; gInteracting = true; gMoved = false;
+    var r = globeCanvas.getBoundingClientRect();
+    gLastX = ev.clientX - r.left; gLastY = ev.clientY - r.top;
+    globeCanvas.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', function (ev) {
+    if (!gDragging) return;
+    var r = globeCanvas.getBoundingClientRect();
+    var px = ev.clientX - r.left, py = ev.clientY - r.top;
+    var dx = px - gLastX, dy = py - gLastY;
+    gOrb.yaw += dx * 0.005;
+    gOrb.pitch = Math.max(-1.35, Math.min(1.35, gOrb.pitch + dy * 0.005));
+    gLastX = px; gLastY = py;
+    if (Math.abs(dx) + Math.abs(dy) > 2) gMoved = true;
+  });
+  window.addEventListener('mouseup', function (ev) {
+    if (!gDragging) return;
+    gDragging = false; gInteracting = false;
+    globeCanvas.classList.remove('dragging');
+    if (!gMoved) {
+      var r = globeCanvas.getBoundingClientRect();
+      var picked = gPick(ev.clientX - r.left, ev.clientY - r.top);
+      select(picked || null);
+    }
+  });
+  globeCanvas.addEventListener('wheel', function (ev) {
+    ev.preventDefault();
+    gZoom = Math.min(2.6, Math.max(0.45, gZoom * (ev.deltaY < 0 ? 0.9 : 1.12)));
   }, { passive: false });
 
   // ---- inspector: structure + meaning of the selection ----
