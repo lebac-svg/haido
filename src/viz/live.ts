@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { Db } from '../core/db.js';
@@ -77,6 +77,58 @@ const AGENT_WINDOW_MS = 20_000;
 const INJECT_WINDOW_MS = 30_000;
 
 /**
+ * The activity band must survive reloads and server restarts: every broadcast
+ * event is appended to .haido/events.jsonl and the newest tail is handed to
+ * each page as `backlog` on connect. Kinds: file | file-agent | mem-warn |
+ * mem-ok | inject.
+ */
+export interface JournalEvent {
+  t: number;
+  k: string;
+  label: string;
+  id?: string;
+}
+
+function journalPath(root: string): string {
+  return path.join(haidoDir(root), 'events.jsonl');
+}
+
+function appendJournal(root: string, events: JournalEvent[]): void {
+  try {
+    appendFileSync(journalPath(root), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
+  } catch {
+    // the journal is best-effort — never let it break a broadcast
+  }
+}
+
+export function readJournalTail(root: string, limit = 120): JournalEvent[] {
+  try {
+    const lines = readFileSync(journalPath(root), 'utf8').split('\n').filter(Boolean);
+    return lines.slice(-limit).flatMap((l) => {
+      try {
+        return [JSON.parse(l) as JournalEvent];
+      } catch {
+        return [];
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Boot-time housekeeping: keep the journal from growing without bound. */
+function rotateJournal(root: string, maxLines = 4000, keep = 1000): void {
+  try {
+    const lines = readFileSync(journalPath(root), 'utf8').split('\n').filter(Boolean);
+    if (lines.length > maxLines) {
+      writeFileSync(journalPath(root), lines.slice(-keep).join('\n') + '\n');
+    }
+  } catch {
+    // no journal yet
+  }
+}
+
+/**
  * Who just edited? The Claude Code PostToolUse hook stamps every Edit/Write
  * into `.haido/session/<id>.json` (`lastTouch`), so agent activity is the set
  * of recently stamped paths; anything else that hits the watcher is a human
@@ -125,6 +177,7 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
   let parsed = JSON.parse(json) as VizData;
   let htmlCache: string | null = null;
   const clients = new Set<ServerResponse>();
+  rotateJournal(root);
 
   const frameFor = (
     data: VizData,
@@ -132,8 +185,13 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
     mems: string[],
     agent: string[],
     injected: string[],
+    backlog?: JournalEvent[],
   ): string =>
-    `event: map\ndata: ${JSON.stringify({ data, hot: { files, mems, agent, injected } })}\n\n`;
+    `event: map\ndata: ${JSON.stringify({
+      data,
+      hot: { files, mems, agent, injected },
+      ...(backlog ? { backlog } : {}),
+    })}\n\n`;
 
   const commit = (
     nextJson: string,
@@ -151,12 +209,32 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
       return;
     const touches = files.length > 0 ? readAgentTouches(root) : new Map<string, number>();
     const cutoff = Date.now() - AGENT_WINDOW_MS;
-    const agent = files.filter((p) => (touches.get(p) ?? 0) >= cutoff);
+    const agentSet = new Set(files.filter((p) => (touches.get(p) ?? 0) >= cutoff));
     json = nextJson;
     parsed = next;
     htmlCache = null;
-    const frame = frameFor(next, files, mems, agent, injects);
+    const frame = frameFor(next, files, mems, [...agentSet], injects);
     for (const res of clients) res.write(frame);
+    // persist what just happened — pages joining later still see the story
+    const now = Date.now();
+    const title = new Map(next.memories.map((m) => [m.id, (m['title'] as string) || m.id]));
+    const status = new Map(next.memories.map((m) => [m.id, m['status'] as string]));
+    const journal: JournalEvent[] = [];
+    for (const p of files) {
+      journal.push({ t: now, k: agentSet.has(p) ? 'file-agent' : 'file', label: p, id: p });
+    }
+    for (const id of mems) {
+      journal.push({
+        t: now,
+        k: status.get(id) === 'needs_review' ? 'mem-warn' : 'mem-ok',
+        label: title.get(id) ?? id,
+        id,
+      });
+    }
+    for (const id of injects) {
+      journal.push({ t: now, k: 'inject', label: title.get(id) ?? id, id });
+    }
+    if (journal.length > 0) appendJournal(root, journal);
     opts.onUpdate?.({ changedFiles: files, changedMemories: mems, clients: clients.size });
   };
 
@@ -249,7 +327,7 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
         Connection: 'keep-alive',
       });
       res.write('retry: 1500\n\n');
-      res.write(frameFor(parsed, [], [], [], []));
+      res.write(frameFor(parsed, [], [], [], [], readJournalTail(root)));
       clients.add(res);
       req.on('close', () => clients.delete(res));
       return;

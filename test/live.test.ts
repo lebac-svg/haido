@@ -15,6 +15,7 @@ const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 interface MapFrame {
   data: { files: Array<{ path: string }>; memories: Array<{ id: string }> };
   hot: { files: string[]; mems: string[]; agent: string[]; injected: string[] };
+  backlog?: Array<{ t: number; k: string; label: string; id?: string }>;
 }
 
 /** Incremental SSE parser: next() resolves with the next `event: map` payload. */
@@ -195,6 +196,12 @@ describe('haido viz --live', () => {
     );
     const frame = await next();
     expect(frame.hot.injected).toContain(id);
+
+    // the journal persists it — a page connecting later replays the story
+    const res2 = await fetch(new URL('/events', handle.url));
+    const next2 = sseCollector(res2.body as ReadableStream<Uint8Array>);
+    const first2 = await next2();
+    expect(first2.backlog?.some((e) => e.k === 'inject' && e.id === id)).toBe(true);
   });
 
   it('readAgentTouches merges session states and keeps the freshest stamp', () => {

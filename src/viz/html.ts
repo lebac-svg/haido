@@ -683,20 +683,26 @@ const TEMPLATE = `<!doctype html>
 
   // ---- the activity band: what is happening right now (live only) ----
   var lastFeedKey = '', lastFeedAt = 0;
-  function feedEvent(ev) {
+  function feedEvent(ev, ts, noDedupe) {
     var icon = ev[0], cls = ev[1], label = ev[2], targetId = ev[3];
-    var key = icon + label;
-    var t = Date.now();
-    if (key === lastFeedKey && t - lastFeedAt < 4000) return;
-    lastFeedKey = key; lastFeedAt = t;
+    if (!noDedupe) {
+      var key = icon + label;
+      var tNow = Date.now();
+      if (key === lastFeedKey && tNow - lastFeedAt < 4000) return;
+      lastFeedKey = key; lastFeedAt = tNow;
+    }
+    var d = ts ? new Date(ts) : new Date();
+    var sameDay = d.toDateString() === new Date().toDateString();
+    var stamp = sameDay
+      ? pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds())
+      : pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     var ul = document.getElementById('feed');
     var li = document.createElement('li');
-    var d = new Date();
-    li.innerHTML = '<span class="t">' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' +
-      pad2(d.getSeconds()) + '</span><span class="' + cls + '">' + icon + '</span> ' + escH(label);
+    li.innerHTML = '<span class="t">' + stamp + '</span><span class="' + cls + '">' + icon +
+      '</span> ' + escH(label);
     if (targetId) li.addEventListener('click', function () { focusEntityById(targetId); });
     ul.insertBefore(li, ul.firstChild);
-    while (ul.children.length > 120) ul.removeChild(ul.lastChild);
+    while (ul.children.length > 160) ul.removeChild(ul.lastChild);
   }
   function focusEntityById(id) {
     var e = byId[id] || memById[id];
@@ -1603,9 +1609,25 @@ const TEMPLATE = `<!doctype html>
       liveEl.title = on ? 'đang theo dõi thay đổi' : 'tự kết nối lại…';
     };
     setLive(false);
+    // the journal survives restarts — replay the recent tail into the band once
+    var backlogDone = false;
+    var BK = {
+      'file': ['✎', ''], 'file-agent': ['⚡', 'agent'],
+      'mem-warn': ['⚠', 'warn'], 'mem-ok': ['✅', 'ok'], 'inject': ['🤖', 'agent']
+    };
     var es = new EventSource('events');
     es.addEventListener('map', function (ev) {
       var msg = JSON.parse(ev.data);
+      if (msg.backlog && !backlogDone) {
+        backlogDone = true;
+        msg.backlog.forEach(function (e) {
+          var bk = BK[e.k] || ['•', ''];
+          if (e.k === 'inject') injectCount++;
+          feedEvent(
+            [bk[0], bk[1], (e.k === 'inject' ? 'tiêm ghi chú: ' : '') + (e.label || ''), e.id],
+            e.t, true);
+        });
+      }
       applyData(msg.data || {}, msg.hot);
       setLive(true);
     });
