@@ -2,18 +2,18 @@
  * `haido viz` — the human window (SPEC US6): one self-contained dark HTML page,
  * zero dependencies, works from file://.
  *
- * Two modes sharing one 3D force simulation:
- *  - 2D (default, the READING view): z is spring-flattened to 0; directory
- *    territory hulls; pan + node dragging.
- *  - 3D (showcase, user request 2026-07-11): perspective projection on canvas,
- *    drag = orbit, wheel = dolly, slow auto-rotate while idle; depth fades
- *    distant marks. No hulls (occlusion), no node dragging.
+ * Memory is a FIRST-CLASS citizen on the map (user feedback 2026-07-11,
+ * m_boot_012): each note is a diamond satellite tethered to every file/symbol
+ * it anchors to — a note bridging code and docs is literally drawn as a bridge.
+ * Fresh notes are ink diamonds, needs-review notes glow status-warning (with
+ * icon+label in the panel; status is never color-alone). Files keep the white
+ * ring so presence still reads with satellites toggled off or when zoomed out.
  *
- * Anti-hairball rules (m_boot_011) apply in BOTH modes: edges are ambient by
- * default; hover/click spotlights only the incident edges (arrowheads = import
- * direction) while the rest recedes. Node color = top-level directory
- * (validated categorical palette, fixed order, >8 folds into "Khác"); memory
- * presence = white ring; needs-review = warning ring + icon+label in the panel.
+ * Two view modes share one 3D force simulation: 2D (reading view — z spring-
+ * flattened, territory hulls, pan, node drag) and 3D (showcase — perspective
+ * canvas projection, drag = orbit, wheel = dolly, idle auto-rotate, depth fog).
+ * Anti-hairball (m_boot_011): edges ambient by default; hover/click spotlights
+ * only the incident links (arrowheads = import direction).
  */
 export function buildVizHtml(dataJson: string, repoName: string): string {
   const safeJson = dataJson.replaceAll('<', '\\u003c');
@@ -65,18 +65,21 @@ const TEMPLATE = `<!doctype html>
   #legend .ring { width: 9px; height: 9px; border-radius: 50%; display: inline-block;
     border: 2px solid var(--ink); background: transparent; }
   #legend .ring.warn { border-color: var(--warn); }
+  #legend .dia { width: 8px; height: 8px; display: inline-block; transform: rotate(45deg);
+    background: var(--ink-2); border-radius: 1px; }
+  #legend .dia.warn { background: var(--warn); }
   main { flex: 1; display: flex; min-height: 0; }
   #map { flex: 1; position: relative; background: var(--surface); }
   canvas { position: absolute; inset: 0; cursor: grab; }
   canvas.dragging { cursor: grabbing; }
   #tip {
-    position: absolute; pointer-events: none; display: none; max-width: 340px;
+    position: absolute; pointer-events: none; display: none; max-width: 360px;
     background: var(--page); border: 1px solid var(--border); border-radius: 8px;
     padding: 7px 10px; color: var(--ink-2); box-shadow: 0 4px 18px rgba(0,0,0,.5);
   }
   #tip b { color: var(--ink); font-weight: 600; }
   #panel {
-    width: 340px; border-left: 1px solid var(--hair); background: var(--surface);
+    width: 350px; border-left: 1px solid var(--hair); background: var(--surface);
     overflow-y: auto; padding: 14px; display: none;
   }
   #panel.open { display: block; }
@@ -84,10 +87,13 @@ const TEMPLATE = `<!doctype html>
   #panel .meta { color: var(--ink-3); margin: 4px 0 10px; }
   #panel .mem {
     border: 1px solid var(--hair); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+    cursor: pointer;
   }
+  #panel .mem:hover { border-color: var(--ink-3); }
   #panel .mem .t { color: var(--ink); font-weight: 600; }
+  #panel .mem .body { margin-top: 4px; }
   #panel .mem .why { color: var(--ink-3); margin-top: 4px; }
-  #panel .mem .flag { color: var(--warn); font-weight: 600; }
+  #panel .flag { color: var(--warn); font-weight: 600; }
   #panel .sec { color: var(--ink-3); text-transform: uppercase; font-size: 11px;
     letter-spacing: .04em; margin: 12px 0 6px; }
   #panel .edge { padding: 2px 0; word-break: break-all; cursor: pointer; }
@@ -105,6 +111,7 @@ const TEMPLATE = `<!doctype html>
   <span class="stats" id="stats"></span>
   <label><input type="checkbox" id="mode3d"> 🧊 3D</label>
   <label id="rotWrap" style="opacity:.45"><input type="checkbox" id="autoRotate" checked disabled> tự xoay</label>
+  <label><input type="checkbox" id="showMems" checked> ⬥ ghi chú</label>
   <label><input type="checkbox" id="showImports" checked> import</label>
   <label><input type="checkbox" id="showCochange" checked> hay đổi cùng nhau</label>
   <label><input type="checkbox" id="allEdges"> hiện rõ mọi liên kết</label>
@@ -126,19 +133,8 @@ const TEMPLATE = `<!doctype html>
   var OTHER = '#52514e';
   var TYPE_ICON = { invariant: '⛔', gotcha: '🪤', decision: '📌', convention: '📐', todo: '📝' };
 
-  // ---- model ----
+  // ---- model: file nodes ----
   function topDir(p) { var i = p.indexOf('/'); return i === -1 ? '(gốc)' : p.slice(0, i) + '/'; }
-  var memByPath = {}, staleByPath = {};
-  (DATA.memories || []).forEach(function (m) {
-    var seen = {};
-    (m.anchors || []).forEach(function (a) {
-      if (seen[a.path]) return;
-      seen[a.path] = true;
-      (memByPath[a.path] = memByPath[a.path] || []).push(m);
-      if (m.status === 'needs_review') staleByPath[a.path] = true;
-    });
-  });
-
   var dirCount = {};
   DATA.files.forEach(function (f) { var d = topDir(f.path); dirCount[d] = (dirCount[d] || 0) + 1; });
   var dirs = Object.keys(dirCount).sort(function (a, b) { return dirCount[b] - dirCount[a]; });
@@ -148,8 +144,8 @@ const TEMPLATE = `<!doctype html>
   var nodes = DATA.files.map(function (f, i) {
     var dir = topDir(f.path);
     return {
-      id: f.path, dir: dir, symbols: f.symbols || 0,
-      mems: memByPath[f.path] || [], stale: !!staleByPath[f.path],
+      kind: 'file', id: f.path, dir: dir, symbols: f.symbols || 0,
+      mems: [], stale: false,
       color: dirColor[dir],
       r: Math.min(18, 4 + Math.sqrt(f.symbols || 0) * 1.6),
       x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, idx: i, pinned: false,
@@ -164,6 +160,32 @@ const TEMPLATE = `<!doctype html>
   edges.forEach(function (e) {
     e.a.nbr[e.b.idx] = true; e.b.nbr[e.a.idx] = true;
     e.a.deg++; e.b.deg++;
+  });
+
+  // ---- model: memory satellites (first-class citizens) ----
+  var mems = [];
+  (DATA.memories || []).forEach(function (m, mi) {
+    var files = [];
+    var seen = {};
+    (m.anchors || []).forEach(function (a) {
+      if (seen[a.path]) return;
+      seen[a.path] = true;
+      var fn = byId[a.path];
+      if (fn) files.push(fn);
+    });
+    var node = {
+      kind: 'mem', id: m.id, type: m.type, status: m.status,
+      title: m.title || '', body: m.body || '', why: m.why || '',
+      anchors: (m.anchors || []), files: files, mi: mi,
+      r: 5,
+      x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
+      sx: 0, sy: 0, sr: 0, sdepth: 1, sOn: false
+    };
+    files.forEach(function (fn) {
+      fn.mems.push(node);
+      if (m.status === 'needs_review') fn.stale = true;
+    });
+    mems.push(node);
   });
 
   // seed: directory centers on a sphere (golden spiral), members jittered around
@@ -185,13 +207,19 @@ const TEMPLATE = `<!doctype html>
     n.y = c[1] + Math.sin(a2) * rr;
     n.z = c[2] + Math.sin(a2 * 0.7) * rr * 0.6;
   });
+  mems.forEach(function (m, i) {
+    var base = m.files[0] || { x: 0, y: 0, z: 0 };
+    var a2 = i * 2.399963 + 1;
+    m.x = base.x + Math.cos(a2) * 40;
+    m.y = base.y + Math.sin(a2) * 40;
+    m.z = base.z + 20;
+  });
 
   // ---- header ----
-  var memTotal = (DATA.memories || []).length;
-  var staleTotal = (DATA.memories || []).filter(function (m) { return m.status === 'needs_review'; }).length;
+  var staleTotal = mems.filter(function (m) { return m.status === 'needs_review'; }).length;
   var symTotal = nodes.reduce(function (s, n) { return s + n.symbols; }, 0);
   document.getElementById('stats').textContent =
-    nodes.length + ' file · ' + symTotal + ' symbol · ' + memTotal + ' ghi chú' +
+    nodes.length + ' file · ' + symTotal + ' symbol · ' + mems.length + ' ghi chú' +
     (staleTotal ? ' (⚠ ' + staleTotal + ' cần review)' : '');
   var legend = document.getElementById('legend');
   dirs.slice(0, PALETTE.length).forEach(function (d) {
@@ -206,21 +234,22 @@ const TEMPLATE = `<!doctype html>
     o.innerHTML = '<span class="dot" style="background:' + OTHER + '"></span>khác';
     legend.appendChild(o);
   }
-  var l1 = document.createElement('span');
-  l1.className = 'chip';
-  l1.innerHTML = '<span class="ring"></span>có ghi chú';
-  legend.appendChild(l1);
-  var l2 = document.createElement('span');
-  l2.className = 'chip';
-  l2.innerHTML = '<span class="ring warn"></span>⚠ cần review';
-  legend.appendChild(l2);
+  [
+    '<span class="dia"></span>ghi chú (⬥ neo vào file)',
+    '<span class="dia warn"></span>⚠ ghi chú cần review'
+  ].forEach(function (htmlChip) {
+    var s = document.createElement('span');
+    s.className = 'chip';
+    s.innerHTML = htmlChip;
+    legend.appendChild(s);
+  });
 
-  // ---- canvas, camera (2D pan/zoom + 3D orbit) ----
+  // ---- canvas, camera ----
   var canvas = document.getElementById('canvas');
   var ctx = canvas.getContext('2d');
   var W = 1200, H = 800;
-  var cam = { x: 0, y: 0, k: 1 };                    // 2D
-  var orb = { yaw: 0.6, pitch: 0.25, dist: 760 };    // 3D
+  var cam = { x: 0, y: 0, k: 1 };
+  var orb = { yaw: 0.6, pitch: 0.25, dist: 760 };
   var mode3d = false, autoRotate = true, interacting = false;
   var PERSP = 720;
   var dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -260,11 +289,20 @@ const TEMPLATE = `<!doctype html>
   function toWorld2D(px, py) { return [(px - W / 2) / cam.k + cam.x, (py - H / 2) / cam.k + cam.y]; }
 
   // ---- filters ----
-  var showImports = true, showCochange = true, onlyMem = false, allEdges = false, query = '';
+  var showImports = true, showCochange = true, onlyMem = false, allEdges = false, showMems = true, query = '';
   function visible(n) { return !(onlyMem && n.mems.length === 0); }
+  function memVisible(m) {
+    if (!showMems) return false;
+    return m.files.some(function (fn) { return visible(fn); }) || m.files.length === 0;
+  }
   function matches(n) { return query === '' || n.id.toLowerCase().indexOf(query) !== -1; }
+  function memMatches(m) {
+    if (query === '') return true;
+    if ((m.title + ' ' + m.body).toLowerCase().indexOf(query) !== -1) return true;
+    return m.files.some(matches);
+  }
 
-  // ---- simulation: one 3D sim; 2D mode spring-flattens z ----
+  // ---- simulation ----
   var alpha = 1;
   function tick() {
     var i, j, n, m, e;
@@ -294,7 +332,7 @@ const TEMPLATE = `<!doctype html>
         n.vz += (ct.z / ct.c - n.z) * 0.035;
       }
       n.vx += -n.x * 0.0025; n.vy += -n.y * 0.0025; n.vz += -n.z * 0.0025;
-      if (!mode3d) n.vz += -n.z * 0.09; // flatten for the reading view
+      if (!mode3d) n.vz += -n.z * 0.09;
     }
     for (i = 0; i < edges.length; i++) {
       e = edges[i];
@@ -305,6 +343,42 @@ const TEMPLATE = `<!doctype html>
       var s = k * (el - rest) / el;
       e.a.vx += ex * s; e.a.vy += ey * s; e.a.vz += ez * s;
       e.b.vx -= ex * s; e.b.vy -= ey * s; e.b.vz -= ez * s;
+    }
+    // memory satellites: tether springs to anchors + gentle mem-mem repulsion
+    for (i = 0; i < mems.length; i++) {
+      m = mems[i];
+      for (j = 0; j < m.files.length; j++) {
+        n = m.files[j];
+        var mx = n.x - m.x, my = n.y - m.y, mz = n.z - m.z;
+        var ml = Math.sqrt(mx * mx + my * my + mz * mz) + 0.01;
+        var ms = 0.09 * (ml - 42) / ml;
+        m.vx += mx * ms; m.vy += my * ms; m.vz += mz * ms;
+      }
+      for (j = i + 1; j < mems.length; j++) {
+        var m2 = mems[j];
+        var rx = m.x - m2.x, ry = m.y - m2.y, rz = m.z - m2.z;
+        var rd2 = rx * rx + ry * ry + rz * rz + 0.01;
+        if (rd2 > 16000) continue;
+        var rf = 500 / rd2;
+        var rl = Math.sqrt(rd2);
+        rx /= rl; ry /= rl; rz /= rl;
+        m.vx += rx * rf; m.vy += ry * rf; m.vz += rz * rf;
+        m2.vx -= rx * rf; m2.vy -= ry * rf; m2.vz -= rz * rf;
+      }
+      // keep the diamond out of its own anchor's disc
+      for (j = 0; j < m.files.length; j++) {
+        n = m.files[j];
+        var px2 = m.x - n.x, py2 = m.y - n.y, pz2 = m.z - n.z;
+        var pd = Math.sqrt(px2 * px2 + py2 * py2 + pz2 * pz2) + 0.01;
+        var minD = n.r + 14;
+        if (pd < minD) {
+          var pf = (minD - pd) * 0.12;
+          m.vx += (px2 / pd) * pf; m.vy += (py2 / pd) * pf; m.vz += (pz2 / pd) * pf;
+        }
+      }
+      if (!mode3d) m.vz += -m.z * 0.09;
+      m.vx *= 0.8; m.vy *= 0.8; m.vz *= 0.8;
+      m.x += m.vx * alpha; m.y += m.vy * alpha; m.z += m.vz * alpha;
     }
     for (i = 0; i < nodes.length; i++) {
       n = nodes[i];
@@ -374,7 +448,7 @@ const TEMPLATE = `<!doctype html>
 
   // ---- drawing ----
   var hover = null, selected = null;
-  function focusNode() { return hover || selected; }
+  function focusEntity() { return hover || selected; }
   function drawArrow(x1, y1, x2, y2, rTarget, color) {
     var dx = x2 - x1, dy = y2 - y1;
     var len = Math.sqrt(dx * dx + dy * dy);
@@ -390,15 +464,33 @@ const TEMPLATE = `<!doctype html>
     ctx.fillStyle = color;
     ctx.fill();
   }
+  function drawDiamond(x, y, r, fill, dim) {
+    ctx.beginPath();
+    ctx.moveTo(x, y - r);
+    ctx.lineTo(x + r, y);
+    ctx.lineTo(x, y + r);
+    ctx.lineTo(x - r, y);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = dim ? 'rgba(13,13,13,0.4)' : '#0d0d0d';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    var i, e, n;
+    var i, e, n, m;
     for (i = 0; i < nodes.length; i++) project(nodes[i]);
+    for (i = 0; i < mems.length; i++) project(mems[i]);
     if (!mode3d) drawTerritories();
 
-    var f = focusNode();
+    var f = focusEntity();
+    var fIsMem = f && f.kind === 'mem';
+    var fIsFile = f && f.kind === 'file';
+
+    // file↔file edges (spotlight: only the focused file's edges; none when a memory is focused)
     var edgeList = edges;
     if (mode3d) {
       edgeList = edges.slice().sort(function (p, q) {
@@ -410,8 +502,8 @@ const TEMPLATE = `<!doctype html>
       if (e.kind === 'imports' && !showImports) continue;
       if (e.kind === 'co_change' && !showCochange) continue;
       if (!visible(e.a) || !visible(e.b) || !e.a.sOn || !e.b.sOn) continue;
-      var incident = f && (e.a === f || e.b === f);
-      if (f && !incident) continue; // spotlight: chỉ liên kết của node đang soi
+      var incident = fIsFile && (e.a === f || e.b === f);
+      if (f && !incident) continue;
       var depthMul = mode3d ? Math.min(e.a.sdepth, e.b.sdepth) : 1;
       var queryDim = query !== '' && !(matches(e.a) && matches(e.b));
       ctx.beginPath();
@@ -446,15 +538,42 @@ const TEMPLATE = `<!doctype html>
     }
     ctx.setLineDash([]);
 
+    // memory tethers
+    if (showMems) {
+      for (i = 0; i < mems.length; i++) {
+        m = mems[i];
+        if (!memVisible(m) || !m.sOn) continue;
+        var mLit = f && (m === f || (fIsFile && m.files.indexOf(f) !== -1));
+        if (f && !mLit) continue;
+        var warm = m.status === 'needs_review';
+        for (var j2 = 0; j2 < m.files.length; j2++) {
+          n = m.files[j2];
+          if (!visible(n) || !n.sOn) continue;
+          var dMul = mode3d ? Math.min(m.sdepth, n.sdepth) : 1;
+          var aT = (mLit ? 0.9 : 0.3) * dMul;
+          ctx.beginPath();
+          ctx.moveTo(m.sx, m.sy); ctx.lineTo(n.sx, n.sy);
+          ctx.setLineDash([2, 3]);
+          ctx.strokeStyle = warm
+            ? 'rgba(250,178,25,' + aT + ')'
+            : 'rgba(255,255,255,' + aT * 0.8 + ')';
+          ctx.lineWidth = mLit ? 1.4 : 1;
+          ctx.stroke();
+        }
+      }
+      ctx.setLineDash([]);
+    }
+
+    // file nodes
     var order = nodes;
     if (mode3d) {
-      order = nodes.slice().sort(function (p, q) { return p.sdepth - q.sdepth; }); // far first
+      order = nodes.slice().sort(function (p, q) { return p.sdepth - q.sdepth; });
     }
     for (i = 0; i < order.length; i++) {
       n = order[i];
       if (!visible(n) || !n.sOn) continue;
-      var isFocus = f && n === f;
-      var isNbr = f && f.nbr[n.idx];
+      var isFocus = fIsFile && n === f;
+      var isNbr = (fIsFile && f.nbr[n.idx]) || (fIsMem && f.files.indexOf(n) !== -1);
       var recede = f ? !(isFocus || isNbr) : false;
       var queryDim2 = query !== '' && !matches(n);
       var depthA = mode3d ? n.sdepth : 1;
@@ -485,6 +604,37 @@ const TEMPLATE = `<!doctype html>
       }
       ctx.globalAlpha = 1;
     }
+
+    // memory diamonds on top — knowledge floats above the code
+    if (showMems) {
+      var morder = mems;
+      if (mode3d) {
+        morder = mems.slice().sort(function (p, q) { return p.sdepth - q.sdepth; });
+      }
+      for (i = 0; i < morder.length; i++) {
+        m = morder[i];
+        if (!memVisible(m) || !m.sOn) continue;
+        var mFocus = fIsMem && m === f;
+        var mNbr = fIsFile && m.files.indexOf(f) !== -1;
+        var mRecede = f ? !(mFocus || mNbr) : false;
+        var mQueryDim = query !== '' && !memMatches(m);
+        var mDepth = mode3d ? m.sdepth : 1;
+        ctx.globalAlpha = (mQueryDim ? 0.08 : mRecede ? 0.14 : 1) * mDepth;
+        var mr = Math.max(3.5, m.r * (mode3d ? m.sdepth + 0.4 : cam.k));
+        if (mFocus || m === selected) {
+          ctx.beginPath(); ctx.arc(m.sx, m.sy, mr + 7, 0, 7);
+          ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.2; ctx.stroke();
+        }
+        drawDiamond(m.sx, m.sy, mr, m.status === 'needs_review' ? '#fab219' : '#e8e6da', mRecede);
+        var showT = mFocus || mNbr || m === selected || (!f && (m === hover || (!mode3d && cam.k > 1.2)));
+        if (showT && !mQueryDim && !mRecede) {
+          ctx.font = '11px system-ui, sans-serif';
+          ctx.fillStyle = mFocus ? '#ffffff' : '#c3c2b7';
+          ctx.fillText((TYPE_ICON[m.type] || '•') + ' ' + m.title, m.sx + mr + 6, m.sy + 4);
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
   }
 
   function loop() { tick(); draw(); requestAnimationFrame(loop); }
@@ -493,27 +643,35 @@ const TEMPLATE = `<!doctype html>
   // ---- interaction ----
   var tipEl = document.getElementById('tip');
   function pick(px, py) {
-    var best = null, bestDepth = -1;
-    for (var i = 0; i < nodes.length; i++) {
+    var best = null, bestDepth = -1, i, d;
+    if (showMems) {
+      for (i = 0; i < mems.length; i++) {
+        var m = mems[i];
+        if (!memVisible(m) || !m.sOn) continue;
+        d = Math.hypot(m.sx - px, m.sy - py);
+        if (d < Math.max(11, m.sr + 7) && m.sdepth > bestDepth) { best = m; bestDepth = m.sdepth; }
+      }
+      if (best) return best; // diamonds sit on top — they win ties
+    }
+    for (i = 0; i < nodes.length; i++) {
       var n = nodes[i];
       if (!visible(n) || !n.sOn) continue;
-      var dx = n.sx - px, dy = n.sy - py;
-      var d = Math.sqrt(dx * dx + dy * dy);
+      d = Math.hypot(n.sx - px, n.sy - py);
       if (d < Math.max(12, n.sr + 6) && n.sdepth > bestDepth) { best = n; bestDepth = n.sdepth; }
     }
     return best;
   }
   var dragNode = null, panning = false, orbiting = false, lastX = 0, lastY = 0, moved = false;
-  var downNode = null;
+  var downEntity = null;
   canvas.addEventListener('mousedown', function (ev) {
     var r = canvas.getBoundingClientRect();
     var px = ev.clientX - r.left, py = ev.clientY - r.top;
-    downNode = pick(px, py);
+    downEntity = pick(px, py);
     interacting = true;
     if (mode3d) {
       orbiting = true;
-    } else if (downNode) {
-      dragNode = downNode;
+    } else if (downEntity && downEntity.kind === 'file') {
+      dragNode = downEntity;
       dragNode.pinned = true;
       alpha = Math.max(alpha, 0.3);
     } else {
@@ -540,12 +698,19 @@ const TEMPLATE = `<!doctype html>
     } else {
       var h = pick(px, py);
       hover = h;
-      if (h) {
+      if (h && h.kind === 'mem') {
+        tipEl.style.display = 'block';
+        tipEl.style.left = (px + 14) + 'px'; tipEl.style.top = (py + 14) + 'px';
+        var flag = h.status === 'needs_review' ? ' <span style="color:#fab219">⚠ cần review</span>' : '';
+        tipEl.innerHTML = '<b>' + (TYPE_ICON[h.type] || '•') + ' ' + escH(h.title) + '</b>' + flag +
+          '<br>' + escH(h.body) + '<br><span style="color:#898781">neo: ' +
+          h.files.map(function (fn) { return escH(fn.id); }).join(' · ') + '</span>';
+      } else if (h) {
         tipEl.style.display = 'block';
         tipEl.style.left = (px + 14) + 'px'; tipEl.style.top = (py + 14) + 'px';
         var extra = h.mems.length ? ' · ' + h.mems.length + ' ghi chú' : '';
         var warn2 = h.stale ? ' · <span style="color:#fab219">⚠ cần review</span>' : '';
-        tipEl.innerHTML = '<b>' + h.id + '</b><br>' + h.symbols + ' symbol · ' + h.deg +
+        tipEl.innerHTML = '<b>' + escH(h.id) + '</b><br>' + h.symbols + ' symbol · ' + h.deg +
           ' liên kết' + extra + warn2;
       } else tipEl.style.display = 'none';
     }
@@ -554,13 +719,14 @@ const TEMPLATE = `<!doctype html>
     canvas.classList.remove('dragging');
     interacting = false;
     if (mode3d) {
-      if (!moved) select(downNode); // click (kể cả nền = bỏ chọn)
+      if (!moved) select(downEntity);
     } else {
       if (dragNode && !moved) select(dragNode);
-      if (!dragNode && panning && !moved) select(null);
+      if (!dragNode && !moved && downEntity && downEntity.kind === 'mem') select(downEntity);
+      if (!dragNode && panning && !moved && !downEntity) select(null);
     }
     if (dragNode) dragNode.pinned = false;
-    dragNode = null; panning = false; orbiting = false; downNode = null;
+    dragNode = null; panning = false; orbiting = false; downEntity = null;
   });
   canvas.addEventListener('wheel', function (ev) {
     ev.preventDefault();
@@ -579,43 +745,60 @@ const TEMPLATE = `<!doctype html>
 
   // ---- panel ----
   var panel = document.getElementById('panel');
-  function esc(s) {
+  function escH(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function memCard(m, clickable) {
+    var flag = m.status === 'needs_review' ? ' <span class="flag">⚠ cần review (code đã đổi)</span>' : '';
+    return '<div class="mem" data-mem="' + escH(m.id) + '"' + (clickable ? '' : ' style="cursor:default"') + '>' +
+      '<div class="t">' + (TYPE_ICON[m.type] || '•') + ' ' + escH(m.title) + flag + '</div>' +
+      '<div class="body">' + escH(m.body) + '</div>' +
+      '<div class="why">vì: ' + escH(m.why) + ' · ' + escH(m.id) + '</div></div>';
   }
   function select(n) {
     selected = n;
     if (!n) { panel.className = ''; panel.innerHTML = ''; return; }
     var html = '<button class="close" title="đóng">✕</button>';
-    html += '<h2>' + esc(n.id) + '</h2>';
-    html += '<div class="meta"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + n.color + '"></span> ' +
-      esc(n.dir) + ' · ' + n.symbols + ' symbol · ' + n.deg + ' liên kết</div>';
-    if (n.mems.length > 0) {
-      html += '<div class="sec">Ghi chú neo ở đây</div>';
-      n.mems.forEach(function (m) {
-        var icon = TYPE_ICON[m.type] || '•';
-        var flag = m.status === 'needs_review' ? ' <span class="flag">⚠ cần review (code đã đổi)</span>' : '';
-        html += '<div class="mem"><div class="t">' + icon + ' ' + esc(m.title) + flag + '</div>' +
-          '<div class="why">' + esc(m.id) + '</div></div>';
+    if (n.kind === 'mem') {
+      html += '<h2>' + (TYPE_ICON[n.type] || '•') + ' Ghi chú — ' + escH(n.type.toUpperCase()) + '</h2>';
+      html += '<div class="meta">' + escH(n.id) + '</div>';
+      html += memCard(n, false);
+      html += '<div class="sec">Neo vào</div>';
+      n.files.forEach(function (fn) {
+        html += '<div class="edge" data-path="' + escH(fn.id) + '">' + escH(fn.id) + '</div>';
+      });
+      n.anchors.forEach(function (a) {
+        if (a.qname && a.qname !== a.path) {
+          html += '<div class="meta">↳ ' + escH(a.qname) + '</div>';
+        }
       });
     } else {
-      html += '<div class="sec">Chưa có ghi chú nào ở file này</div>';
-    }
-    var rel = { 'import →': [], '← được import bởi': [], 'hay đổi cùng nhau': [] };
-    edges.forEach(function (e) {
-      if (e.kind === 'imports') {
-        if (e.a === n) rel['import →'].push(e.b.id);
-        else if (e.b === n) rel['← được import bởi'].push(e.a.id);
-      } else if (e.a === n || e.b === n) {
-        rel['hay đổi cùng nhau'].push(e.a === n ? e.b.id : e.a.id);
+      html += '<h2>' + escH(n.id) + '</h2>';
+      html += '<div class="meta"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + n.color + '"></span> ' +
+        escH(n.dir) + ' · ' + n.symbols + ' symbol · ' + n.deg + ' liên kết</div>';
+      if (n.mems.length > 0) {
+        html += '<div class="sec">Ghi chú neo ở đây (click để soi)</div>';
+        n.mems.forEach(function (m) { html += memCard(m, true); });
+      } else {
+        html += '<div class="sec">Chưa có ghi chú nào ở file này</div>';
       }
-    });
-    Object.keys(rel).forEach(function (k) {
-      if (rel[k].length === 0) return;
-      html += '<div class="sec">' + k + '</div>';
-      rel[k].forEach(function (p) {
-        html += '<div class="edge" data-path="' + esc(p) + '">' + esc(p) + '</div>';
+      var rel = { 'import →': [], '← được import bởi': [], 'hay đổi cùng nhau': [] };
+      edges.forEach(function (e) {
+        if (e.kind === 'imports') {
+          if (e.a === n) rel['import →'].push(e.b.id);
+          else if (e.b === n) rel['← được import bởi'].push(e.a.id);
+        } else if (e.a === n || e.b === n) {
+          rel['hay đổi cùng nhau'].push(e.a === n ? e.b.id : e.a.id);
+        }
       });
-    });
+      Object.keys(rel).forEach(function (k) {
+        if (rel[k].length === 0) return;
+        html += '<div class="sec">' + k + '</div>';
+        rel[k].forEach(function (p) {
+          html += '<div class="edge" data-path="' + escH(p) + '">' + escH(p) + '</div>';
+        });
+      });
+    }
     panel.innerHTML = html;
     panel.className = 'open';
     panel.querySelector('.close').addEventListener('click', function () { select(null); });
@@ -627,6 +810,15 @@ const TEMPLATE = `<!doctype html>
         if (!mode3d) { cam.x = target.x; cam.y = target.y; }
       });
     });
+    panel.querySelectorAll('.mem[data-mem]').forEach(function (el) {
+      if (el.style.cursor === 'default') return;
+      el.addEventListener('click', function () {
+        var id = el.getAttribute('data-mem');
+        for (var i = 0; i < mems.length; i++) {
+          if (mems[i].id === id) { select(mems[i]); break; }
+        }
+      });
+    });
   }
 
   // ---- controls ----
@@ -635,18 +827,19 @@ const TEMPLATE = `<!doctype html>
   var rotBox = document.getElementById('autoRotate');
   function refreshHint() {
     hint.innerHTML = mode3d
-      ? '<b style="color:var(--ink-2)">3D trình diễn:</b> kéo = xoay quanh · lăn chuột = tiến/lùi · trỏ/click node để soi liên kết (mũi tên = chiều import) — đọc kỹ thì quay về 2D 🗺️'
-      : '<b style="color:var(--ink-2)">trỏ vào một node để soi liên kết của riêng nó</b> (mũi tên = chiều import) · click để ghim + xem ghi chú · kéo node/nền · lăn chuột zoom — sinh bởi <kbd>haido viz</kbd>';
+      ? '<b style="color:var(--ink-2)">3D trình diễn:</b> kéo = xoay quanh · lăn chuột = tiến/lùi · trỏ/click ⬥ hoặc node để soi — đọc kỹ thì quay về 2D 🗺️'
+      : '<b style="color:var(--ink-2)">⬥ = ghi chú trí nhớ neo vào file</b> (vàng ⚠ = cần review) · trỏ/click node hoặc ⬥ để soi liên kết · kéo node/nền · lăn chuột zoom — sinh bởi <kbd>haido viz</kbd>';
   }
   refreshHint();
   document.getElementById('mode3d').addEventListener('change', function (e) {
     mode3d = e.target.checked;
-    alpha = Math.max(alpha, 0.6); // reheat so the layout inflates/flattens
+    alpha = Math.max(alpha, 0.6);
     rotBox.disabled = !mode3d;
     rotWrap.style.opacity = mode3d ? '1' : '.45';
     refreshHint();
   });
   rotBox.addEventListener('change', function (e) { autoRotate = e.target.checked; });
+  document.getElementById('showMems').addEventListener('change', function (e) { showMems = e.target.checked; });
   document.getElementById('showImports').addEventListener('change', function (e) { showImports = e.target.checked; });
   document.getElementById('showCochange').addEventListener('change', function (e) { showCochange = e.target.checked; });
   document.getElementById('allEdges').addEventListener('change', function (e) { allEdges = e.target.checked; });

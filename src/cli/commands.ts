@@ -237,7 +237,10 @@ function buildVizJson(db: Db): string {
       )
       .all();
     const memories = db
-      .prepare(`SELECT m.id, m.type, m.status, m.title FROM memories m WHERE m.status != 'retired'`)
+      .prepare(
+        `SELECT m.id, m.type, m.status, m.title, m.body, m.why
+         FROM memories m WHERE m.status != 'retired'`,
+      )
       .all() as Array<Record<string, unknown>>;
     const anchorsFor = db.prepare(
       `SELECT target_kind AS kind, qname, path, status FROM anchors WHERE memory_id = ?`,
