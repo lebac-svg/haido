@@ -24,7 +24,8 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      - run: npm install -g npm@latest # trusted publishing needs a recent npm client
+      # install + gate run on node's bundled npm — the exact setup CI proves green;
+      # (npm@latest before `npm ci` broke better-sqlite3's native install script)
       - run: npm ci
       - run: npm run check
       - name: Tag must match package.json version
@@ -34,4 +35,5 @@ jobs:
           if [ "$PKG" != "$TAG" ]; then
             echo "package.json is $PKG but tag is $TAG" && exit 1
           fi
+      - run: npm install -g npm@latest # trusted publishing (OIDC) needs a recent npm client
       - run: npm publish --provenance --access public
