@@ -1,6 +1,6 @@
 {
   "name": "haido",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "A captain's log for AI coding agents — memories anchored to code, aware of their own staleness. (Hải Đồ)",
   "type": "module",
   "license": "MIT",
