@@ -154,7 +154,7 @@ const TEMPLATE = `<!doctype html>
   main.bridge {
     flex: 1; min-height: 0; padding: 14px 10px 10px; gap: 12px;
     display: grid;
-    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 210px;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 420px;
     grid-template-rows: minmax(0, 1.35fr) minmax(0, 1fr);
     grid-template-areas: "globe chart review" "deck deck review";
   }
