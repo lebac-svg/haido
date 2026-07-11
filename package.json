@@ -4,6 +4,14 @@
   "description": "A captain's log for AI coding agents — memories anchored to code, aware of their own staleness. (Hải Đồ)",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lebac-svg/haido.git"
+  },
+  "homepage": "https://github.com/lebac-svg/haido#readme",
+  "bugs": {
+    "url": "https://github.com/lebac-svg/haido/issues"
+  },
   "bin": {
     "haido": "dist/cli.js"
   },

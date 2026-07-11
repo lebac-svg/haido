@@ -36,7 +36,7 @@ session); editing code that invalidates a note triggers an immediate warning.
 ## Install (from source — npm package coming soon)
 
 ```bash
-git clone <this repo> && cd haido && npm install && npm run build
+git clone https://github.com/lebac-svg/haido.git && cd haido && npm install && npm run build
 
 cd /your/project
 node /path/to/haido/dist/cli.js init                  # index + git mining + starter haido.toml
