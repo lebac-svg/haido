@@ -1,5 +1,9 @@
 # 🧭 haido (Hải Đồ)
 
+[![CI](https://github.com/lebac-svg/haido/actions/workflows/ci.yml/badge.svg)](https://github.com/lebac-svg/haido/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/haido)](https://www.npmjs.com/package/haido)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 > **A captain's log for AI coding agents** — project memories anchored to code,
 > aware of their own staleness.
 
