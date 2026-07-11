@@ -28,6 +28,7 @@ import {
 import { mapOverview } from '../recall/overview.js';
 import { recall, type RecallResult } from '../recall/rank.js';
 import { findRelated } from '../recall/related.js';
+import { collectStats, type StatsReport } from './stats.js';
 
 export interface IndexSummary {
   filesSeen: number;
@@ -162,6 +163,15 @@ export function cmdStale(root: string): ReturnType<typeof listNeedsReview> {
   const db = requireDb(root);
   try {
     return listNeedsReview(db);
+  } finally {
+    db.close();
+  }
+}
+
+export function cmdStats(root: string): StatsReport {
+  const db = requireDb(root);
+  try {
+    return collectStats(db, root);
   } finally {
     db.close();
   }

@@ -15,11 +15,13 @@ import {
   cmdRelated,
   cmdRemember,
   cmdStale,
+  cmdStats,
   cmdViz,
   getLang,
   requireDb,
 } from './cli/commands.js';
 import { formatIndexSummary, formatStale } from './cli/format.js';
+import { formatStats } from './cli/stats.js';
 import { t } from './core/lang.js';
 import { watchRepo } from './indexer/watch.js';
 import { runHook, type HookKind } from './integrations/claude-code/hook.js';
@@ -289,6 +291,13 @@ program
     );
     for (const s of r.skipped) console.warn(`skipped ${s.file}: ${s.reason}`);
     console.log("anchors reconciled — run 'haido stale' to review anything that drifted");
+  });
+
+program
+  .command('stats')
+  .description('dogfood metrics: memories, anchors, injections (SPEC §11 targets)')
+  .action(() => {
+    console.log(formatStats(cmdStats(root())));
   });
 
 program
