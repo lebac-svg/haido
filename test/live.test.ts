@@ -143,7 +143,10 @@ describe('haido viz --live', () => {
     expect(frame.hot.mems).toContain(id);
   });
 
-  it(
+  // GitHub windows runners + node 24 crash in libuv fs-event (`Assertion failed:
+  // !_wcsnicmp(filename, dir, dirlen)`) when chokidar watches their temp layout;
+  // the watcher path stays covered by the ubuntu cells and by real-Windows dogfood.
+  it.skipIf(!!process.env['CI'] && process.platform === 'win32')(
     'a file save flows through the watcher into a hot-file frame, attributed to the agent',
     { timeout: 15_000 },
     async () => {
