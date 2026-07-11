@@ -177,7 +177,7 @@ const TEMPLATE = `<!doctype html>
   .frame .body::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 4px; }
 
   #tip {
-    position: absolute; pointer-events: none; display: none; max-width: 360px; z-index: 3;
+    position: fixed; pointer-events: none; display: none; max-width: 360px; z-index: 3;
     background: var(--page); border: 1px solid var(--border); border-radius: 8px;
     padding: 7px 10px; color: var(--ink-2); box-shadow: 0 4px 18px rgba(0,0,0,.5);
   }
@@ -629,7 +629,7 @@ const TEMPLATE = `<!doctype html>
   var W = 1200, H = 800, GW = 300, GH = 200;
   var cam = { x: 0, y: 0, k: 1 };
   var gOrb = { yaw: 0.6, pitch: 0.3, dist: 900 };
-  var gZoom = 1, gInteracting = false;
+  var gZoom = 1;
   var PERSP = 620;
   var dpr = Math.max(1, window.devicePixelRatio || 1);
   function sizeCanvas(cv, stage) {
@@ -1087,30 +1087,71 @@ const TEMPLATE = `<!doctype html>
     }
   }
 
-  // ---- the 3D globe: a second projection of the same simulation, always turning ----
+  // ---- the 3D globe: a second projection of the same simulation ----
+  // rotates only under the reader's hand (drag) — no idle spin
   function drawGlobe() {
     gtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     gtx.clearRect(0, 0, GW, GH);
-    if (!NO_MOTION && !gInteracting) gOrb.yaw += 0.0035;
     var i, n, m;
     for (i = 0; i < nodes.length; i++) projectGlobe(nodes[i]);
     for (i = 0; i < mems.length; i++) projectGlobe(mems[i]);
     var order = nodes.slice().sort(function (p, q) { return p.gdepth - q.gdepth; });
+    var f = focusEntity();
+    var fIsFile = f && f.kind === 'file';
+    var fIsMem = f && f.kind === 'mem';
+    // file↔file edges — same spotlight rule as the 2D chart
     for (i = 0; i < edges.length; i++) {
       var e = edges[i];
+      if (e.kind === 'imports' && !showImports) continue;
+      if (e.kind === 'co_change' && !showCochange) continue;
       if (!e.a.gOn || !e.b.gOn || !visible(e.a) || !visible(e.b)) continue;
+      var incident = fIsFile && (e.a === f || e.b === f);
+      if (f && !incident) continue;
       var dMul = Math.min(e.a.gdepth, e.b.gdepth);
       gtx.beginPath();
       gtx.moveTo(e.a.gx, e.a.gy); gtx.lineTo(e.b.gx, e.b.gy);
-      gtx.strokeStyle = 'rgba(137,135,129,' + (0.10 * dMul) + ')';
-      gtx.lineWidth = 0.7;
+      if (incident) {
+        gtx.strokeStyle = 'rgba(195,194,183,' + (0.9 * Math.max(0.5, dMul)) + ')';
+        gtx.lineWidth = 1.4;
+      } else {
+        gtx.strokeStyle = 'rgba(137,135,129,' + ((allEdges ? 0.35 : 0.10) * dMul) + ')';
+        gtx.lineWidth = 0.7;
+      }
       gtx.stroke();
+    }
+    // memory tethers — the threads the reader asked to SEE in 3D
+    if (showMems) {
+      for (i = 0; i < mems.length; i++) {
+        m = mems[i];
+        if (!m.gOn || !memVisible(m)) continue;
+        var mLit = f && (m === f || (fIsFile && m.files.indexOf(f) !== -1));
+        if (f && !mLit) continue;
+        var warm = m.status === 'needs_review';
+        for (var j3 = 0; j3 < m.files.length; j3++) {
+          n = m.files[j3];
+          if (!n.gOn || !visible(n)) continue;
+          var tMul = Math.min(m.gdepth, n.gdepth);
+          var tA = (mLit ? 0.9 : 0.2) * tMul;
+          gtx.beginPath();
+          gtx.moveTo(m.gx, m.gy); gtx.lineTo(n.gx, n.gy);
+          gtx.setLineDash([2, 3]);
+          gtx.strokeStyle = warm
+            ? 'rgba(250,178,25,' + tA + ')'
+            : 'rgba(255,255,255,' + tA * 0.8 + ')';
+          gtx.lineWidth = mLit ? 1.3 : 0.8;
+          gtx.stroke();
+        }
+      }
+      gtx.setLineDash([]);
     }
     for (i = 0; i < order.length; i++) {
       n = order[i];
       if (!n.gOn || !visible(n)) continue;
+      var isFocus = fIsFile && n === f;
+      var isNbr = (fIsFile && f.nbr[n.idx]) || (fIsMem && f.files.indexOf(n) !== -1);
+      var recede = f ? !(isFocus || isNbr) : false;
       var hv = heatOf(n);
-      gtx.globalAlpha = (0.35 + 0.65 * n.gdepth) * fadeK(n);
+      gtx.globalAlpha = (0.35 + 0.65 * n.gdepth) * fadeK(n) * (recede ? 0.15 : 1);
       if (n.mems.length > 0) {
         gtx.beginPath(); gtx.arc(n.gx, n.gy, n.gr + 1.5, 0, 7);
         gtx.strokeStyle = n.stale ? '#fab219' : 'rgba(255,255,255,0.8)';
@@ -1124,13 +1165,13 @@ const TEMPLATE = `<!doctype html>
         gtx.strokeStyle = 'rgba(' + hc + ',' + (0.5 * hv) + ')';
         gtx.lineWidth = 1.2; gtx.stroke();
       }
-      if (n === selected) {
+      if (n === selected || isFocus) {
         gtx.beginPath(); gtx.arc(n.gx, n.gy, n.gr + 6, 0, 7);
         gtx.strokeStyle = 'rgba(255,255,255,0.55)'; gtx.lineWidth = 1.3; gtx.stroke();
       }
-      if (n === selected || hv > 0.25) {
+      if (!recede && (isFocus || isNbr || n === selected || hv > 0.25)) {
         gtx.font = '10px system-ui, sans-serif';
-        gtx.fillStyle = n === selected ? '#ffffff' : '#c3c2b7';
+        gtx.fillStyle = isFocus || n === selected ? '#ffffff' : '#c3c2b7';
         gtx.fillText(n.id.split('/').pop(), n.gx + n.gr + 5, n.gy + 3);
       }
       gtx.globalAlpha = 1;
@@ -1140,17 +1181,20 @@ const TEMPLATE = `<!doctype html>
       for (i = 0; i < morder.length; i++) {
         m = morder[i];
         if (!m.gOn || !memVisible(m)) continue;
+        var mFocus = fIsMem && m === f;
+        var mNbr = fIsFile && m.files.indexOf(f) !== -1;
+        var mRecede = f ? !(mFocus || mNbr) : false;
         var mhv = heatOf(m);
-        gtx.globalAlpha = (0.4 + 0.6 * m.gdepth) * fadeK(m);
+        gtx.globalAlpha = (0.4 + 0.6 * m.gdepth) * fadeK(m) * (mRecede ? 0.15 : 1);
         drawDiamond(gtx, m.gx, m.gy, Math.max(2, m.gr * 0.8),
           m.status === 'needs_review' ? '#fab219' : '#e8e6da', false);
-        if (m === selected) {
+        if (m === selected || mFocus) {
           gtx.beginPath(); gtx.arc(m.gx, m.gy, Math.max(2, m.gr * 0.8) + 5, 0, 7);
           gtx.strokeStyle = 'rgba(255,255,255,0.55)'; gtx.lineWidth = 1.3; gtx.stroke();
         }
-        if (m === selected || mhv > 0.25) {
+        if (!mRecede && (mFocus || mNbr || m === selected || mhv > 0.25)) {
           gtx.font = '10px system-ui, sans-serif';
-          gtx.fillStyle = m === selected ? '#ffffff' : '#c3c2b7';
+          gtx.fillStyle = mFocus || m === selected ? '#ffffff' : '#c3c2b7';
           gtx.fillText((TYPE_ICON[m.type] || '•') + ' ' + m.title, m.gx + m.gr + 5, m.gy + 3);
         }
         gtx.globalAlpha = 1;
@@ -1220,23 +1264,26 @@ const TEMPLATE = `<!doctype html>
     } else {
       var h = pick(px, py);
       hover = h;
-      if (h && h.kind === 'mem') {
-        tipEl.style.display = 'block';
-        tipEl.style.left = (px + 14) + 'px'; tipEl.style.top = (py + 14) + 'px';
-        var flag = h.status === 'needs_review' ? ' <span style="color:#fab219">⚠ cần review</span>' : '';
-        tipEl.innerHTML = '<b>' + (TYPE_ICON[h.type] || '•') + ' ' + escH(h.title) + '</b>' + flag +
-          '<br>' + escH(h.body) + '<br><span style="color:#898781">neo: ' +
-          h.files.map(function (fn) { return escH(fn.id); }).join(' · ') + '</span>';
-      } else if (h) {
-        tipEl.style.display = 'block';
-        tipEl.style.left = (px + 14) + 'px'; tipEl.style.top = (py + 14) + 'px';
-        var extra = h.mems.length ? ' · ' + h.mems.length + ' ghi chú' : '';
-        var warn2 = h.stale ? ' · <span style="color:#fab219">⚠ cần review</span>' : '';
-        tipEl.innerHTML = '<b>' + escH(h.id) + '</b><br>' + h.symbols + ' symbol · ' + h.deg +
-          ' liên kết' + extra + warn2;
-      } else tipEl.style.display = 'none';
+      showTip(h, ev.clientX, ev.clientY);
     }
   });
+  // one technical-info tooltip for both instruments (fixed positioning)
+  function showTip(h, cx2, cy2) {
+    if (!h) { tipEl.style.display = 'none'; return; }
+    tipEl.style.display = 'block';
+    tipEl.style.left = (cx2 + 14) + 'px'; tipEl.style.top = (cy2 + 14) + 'px';
+    if (h.kind === 'mem') {
+      var flag = h.status === 'needs_review' ? ' <span style="color:#fab219">⚠ cần review</span>' : '';
+      tipEl.innerHTML = '<b>' + (TYPE_ICON[h.type] || '•') + ' ' + escH(h.title) + '</b>' + flag +
+        '<br>' + escH(h.body) + '<br><span style="color:#898781">neo: ' +
+        h.files.map(function (fn) { return escH(fn.id); }).join(' · ') + '</span>';
+    } else {
+      var extra = h.mems.length ? ' · ' + h.mems.length + ' ghi chú' : '';
+      var warn2 = h.stale ? ' · <span style="color:#fab219">⚠ cần review</span>' : '';
+      tipEl.innerHTML = '<b>' + escH(h.id) + '</b><br>' + h.symbols + ' symbol · ' + h.deg +
+        ' liên kết' + extra + warn2;
+    }
+  }
   window.addEventListener('mouseup', function () {
     canvas.classList.remove('dragging');
     if (dragNode && !moved) select(dragNode);
@@ -1281,24 +1328,32 @@ const TEMPLATE = `<!doctype html>
     return best;
   }
   globeCanvas.addEventListener('mousedown', function (ev) {
-    gDragging = true; gInteracting = true; gMoved = false;
+    gDragging = true; gMoved = false;
     var r = globeCanvas.getBoundingClientRect();
     gLastX = ev.clientX - r.left; gLastY = ev.clientY - r.top;
     globeCanvas.classList.add('dragging');
   });
   window.addEventListener('mousemove', function (ev) {
-    if (!gDragging) return;
     var r = globeCanvas.getBoundingClientRect();
     var px = ev.clientX - r.left, py = ev.clientY - r.top;
-    var dx = px - gLastX, dy = py - gLastY;
-    gOrb.yaw += dx * 0.005;
-    gOrb.pitch = Math.max(-1.35, Math.min(1.35, gOrb.pitch + dy * 0.005));
-    gLastX = px; gLastY = py;
-    if (Math.abs(dx) + Math.abs(dy) > 2) gMoved = true;
+    if (gDragging) {
+      var dx = px - gLastX, dy = py - gLastY;
+      gOrb.yaw += dx * 0.005;
+      gOrb.pitch = Math.max(-1.35, Math.min(1.35, gOrb.pitch + dy * 0.005));
+      gLastX = px; gLastY = py;
+      if (Math.abs(dx) + Math.abs(dy) > 2) gMoved = true;
+      return;
+    }
+    // hover on the globe: same technical tooltip + cross-instrument spotlight
+    if (px < 0 || py < 0 || px > GW || py > GH) return;
+    if (dragNode || panning) return;
+    var h = gPick(px, py);
+    hover = h;
+    showTip(h, ev.clientX, ev.clientY);
   });
   window.addEventListener('mouseup', function (ev) {
     if (!gDragging) return;
-    gDragging = false; gInteracting = false;
+    gDragging = false;
     globeCanvas.classList.remove('dragging');
     if (!gMoved) {
       var r = globeCanvas.getBoundingClientRect();
