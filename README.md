@@ -53,27 +53,51 @@ haido viz --live --open   # leave it on a second monitor while your agent works
 
 ## Install
 
+Requires Node ≥ 20. A global install is recommended — the hooks invoke `haido` from your PATH.
+
+### With Claude Code (hooks + MCP — the full experience)
+
 ```bash
-npm install -g haido      # or: npx haido <command> ad-hoc
+npm install -g haido
 
 cd /your/project
-haido init                # index + git mining + starter haido.toml
-haido install claude-code # wires hooks + MCP (.mcp.json)
-# open a new Claude Code session in your project — it now has a memory
+haido init                 # creates .haido/, indexes the code, mines git co-change
+haido install claude-code  # writes hooks into .claude/settings.json + MCP into .mcp.json
+# restart your Claude Code session — it now has a memory
 ```
 
-From source instead: `git clone https://github.com/lebac-svg/haido.git && cd haido && npm install && npm run build`,
-then use `node /path/to/haido/dist/cli.js` in place of `haido` (and pass
-`--command node /path/to/haido/dist/cli.js` to `install claude-code`).
+From then on, automatically: the project map is injected at session start (and re-briefed
+after every context compaction), anchored notes appear the moment a file is touched, an
+edit that invalidates a note warns on the spot, and a session that edited a lot without
+recording anything gets one reflection nudge when it stops. Flags: `--global` writes hooks
+to `~/.claude/settings.json` for all projects; `--command node /path/to/dist/cli.js`
+overrides the launcher for source builds.
 
-`haido install claude-desktop` registers the MCP server for Claude Desktop
-(on-demand recall — Desktop has no hooks). Once published: `npx haido init && npx haido install claude-code`.
+### With Claude Desktop (MCP only — recall on demand)
+
+```bash
+cd /your/project
+haido install claude-desktop   # registers MCP server 'haido-<project>' pinned to this repo
+# restart Claude Desktop
+```
+
+Desktop has no hooks, so nothing is injected automatically — you ask instead:
+*"call `map_overview`"* · *"`recall` notes around src/pricing.ts"* · *"`remember` this
+decision: …"* · *"anything in `stale_memories`?"*. Run the install once per project;
+each project gets its own named server.
+
+Housekeeping: add `.haido/` to `.gitignore` (init reminds you) — the database is
+per-machine; knowledge travels with the repo via the memory pack.
+
+From source instead of npm: `git clone https://github.com/lebac-svg/haido.git && cd haido && npm install && npm run build`,
+then use `node /path/to/haido/dist/cli.js` in place of `haido` (and pass
+`--command node /path/to/haido/dist/cli.js` to the installers).
 
 ## The pieces
 
 | Surface | What you get |
 |---|---|
-| **Hooks** (Claude Code) | Auto-inject: project map at session start; anchored notes per touched file; drift warnings right after an edit invalidates a note |
+| **Hooks** (Claude Code) | Auto-inject: project map at session start (re-briefed after compaction); anchored notes per touched file; drift warnings right after an edit invalidates a note; one stop-time reflection nudge when a busy session recorded nothing |
 | **MCP tools** | `recall` · `remember` · `find_related` · `map_overview` · `stale_memories` · `reanchor` |
 | **CLI** | `init · index [--watch] · serve · install · remember · recall · related · overview · stale · reanchor · export · import · viz [--live] · stats · doctor` |
 | **`haido viz`** | A self-contained interactive map (one HTML file, zero deps): files colored by directory, import/co-change links with spotlight-on-hover, memories as diamond satellites tethered to their anchors, 2D reading view + 3D showcase mode |
@@ -96,6 +120,30 @@ then use `node /path/to/haido/dist/cli.js` in place of `haido` (and pass
 Hygiene is enforced at write time: every note needs a **why** and **≥ 1 anchor**, one fact
 per note (≤ 700 chars), duplicates are flagged. Notes record *decisions, invariants,
 gotchas, conventions* — never things derivable from code.
+
+## Command reference
+
+| Command | What it does |
+|---|---|
+| `haido init` | Create `.haido/`, index the repo, mine git co-change, write a starter `haido.toml` |
+| `haido index [--watch]` | Re-index changed files + reconcile anchors; `--watch` re-runs on every save |
+| `haido install claude-code [--global] [--command …]` | Wire hooks + MCP into Claude Code (idempotent, backs up what it touches) |
+| `haido install claude-desktop` | Register the per-project MCP server for Claude Desktop |
+| `haido viz [--out <file>] [--open]` | Write the self-contained map HTML (default `.haido/map.html`) |
+| `haido viz --live [--port <n>] [--open]` | Serve the map on 127.0.0.1 (default port 6160) and stream repo changes into it live |
+| `haido remember --type <t> --title <…> --body <…> --why <…> --anchor <sym:qname\|file:path>` | Record a note; types: `decision · invariant · gotcha · convention · todo` |
+| `haido recall [query] [--file <path>] [--symbol <qname>] [--budget <tokens>]` | Ranked notes for a file / symbol / free-text query |
+| `haido related <file-or-qname> [--limit <n>]` | Files most related to a target (imports, co-change, same dir) |
+| `haido overview [--budget <tokens>]` | Project map + standing laws — what a fresh session should read first |
+| `haido stale` | Review queue: notes whose anchored code changed, with old→new token diffs |
+| `haido reanchor <id> --confirm` \| `--retire` \| `--move <anchorId> --to <target>` | Resolve a stale note: still true / no longer true / code relocated |
+| `haido export --pack <dir>` · `haido import --pack <dir>` | Memory pack: one reviewable `.md` per note, travels through git |
+| `haido export --viz <file>` | Raw map+memory JSON snapshot (stable format) |
+| `haido stats` | Dogfood metrics: memories by type/freshness, anchors, notes injected per session |
+| `haido serve [--root <path>]` | Run the MCP stdio server by hand (the installers wire this up for you) |
+| `haido doctor` | Diagnose the workspace: node, git, db, config |
+
+Every command answers `--help` with its flags.
 
 ## Configuration (`haido.toml`, committed with your repo)
 
@@ -123,10 +171,11 @@ project is built by a Vietnamese-speaking team, and haido's own memory pack in
 
 ## Status
 
-Core MVP works end-to-end and is verified live in real Claude Code sessions (hooks
-canary + MCP roundtrips), self-hosted on this repo, and dogfooding on a real game
-project. Pre-publish checklist: demo GIF, npm release. Roadmap: doc↔code "spec-of"
-edges, semantic zoom for the map, `.mcpb` bundle for Claude Desktop.
+Published on npm (`npm install -g haido`). The core loop is verified live in real
+Claude Code sessions (hooks canary + MCP roundtrips), self-hosted on this repo — the
+memory pack in `docs/memory/` and the README GIF are both products of that dogfood.
+Roadmap: doc↔code "spec-of" edges, semantic zoom for the map, `.mcpb` bundle for
+Claude Desktop.
 
 ## License
 
