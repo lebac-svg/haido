@@ -6,7 +6,7 @@ import { toPosix } from '../core/paths.js';
 import type { IndexResult, SymbolDiff, SymbolInfo } from '../core/types.js';
 import { extractSymbols } from './extract.js';
 import { extractImports, loadTsPaths, resolveImport, type RawImport } from './imports.js';
-import { hashNode, sha1 } from './normalize.js';
+import { normalizedText, sha1, SNAPSHOT_CAP } from './normalize.js';
 import { EXT_TO_LANG, parseSource, type LangId } from './parser.js';
 
 export interface IndexOptions {
@@ -48,6 +48,7 @@ interface PendingFile {
   disk: DiskFile;
   contentHash: string;
   normHash: string;
+  normText: string;
   symbols: SymbolInfo[];
   imports: RawImport[];
 }
@@ -61,40 +62,60 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
   const disk = scanDisk(root, makePathFilter(config), config.index.maxFileKb * 1024);
   const fileSet = new Set(disk.map((f) => f.rel));
   const dbFiles = db
-    .prepare(`SELECT id, path, mtime, size, content_hash FROM files WHERE deleted_at IS NULL`)
+    .prepare(
+      `SELECT id, path, mtime, size, content_hash, (norm_text IS NULL) AS no_norm
+       FROM files WHERE deleted_at IS NULL`,
+    )
     .all() as Array<{
     id: number;
     path: string;
     mtime: number;
     size: number;
     content_hash: string;
+    no_norm: 0 | 1;
   }>;
   const dbByPath = new Map(dbFiles.map((r) => [r.path, r]));
 
   // Phase 1 — parse changed files (outside the write transaction).
+  // Rows missing norm_text (pre-v2 dbs) are re-parsed even when content is
+  // unchanged: the snapshot backfill is self-healing, not a one-shot migration.
   const pending: PendingFile[] = [];
   const touchedOnly: Array<{ id: number; mtime: number; size: number }> = [];
   for (const file of disk) {
     const row = dbByPath.get(file.rel);
-    if (row && row.mtime === file.mtime && row.size === file.size) continue;
+    if (row && row.mtime === file.mtime && row.size === file.size && !row.no_norm) continue;
     const content = readFileSync(file.abs, 'utf8');
     const contentHash = sha1(content);
-    if (row && row.content_hash === contentHash) {
+    if (row && row.content_hash === contentHash && !row.no_norm) {
       touchedOnly.push({ id: row.id, mtime: file.mtime, size: file.size });
       continue;
     }
     if (file.lang === 'text') {
       // knowledge files: fingerprint = content with line endings normalized (git-style)
-      const normHash = sha1(content.replaceAll('\r\n', '\n'));
-      pending.push({ disk: file, contentHash, normHash, symbols: [], imports: [] });
+      const norm = content.replaceAll('\r\n', '\n');
+      pending.push({
+        disk: file,
+        contentHash,
+        normHash: sha1(norm),
+        normText: norm.slice(0, SNAPSHOT_CAP),
+        symbols: [],
+        imports: [],
+      });
       continue;
     }
     const tree = await parseSource(file.lang, content);
     const symbols = extractSymbols(tree, file.lang, file.rel);
     const imports = extractImports(tree, file.lang);
-    const normHash = hashNode(tree.rootNode);
+    const norm = normalizedText(tree.rootNode);
     tree.delete();
-    pending.push({ disk: file, contentHash, normHash, symbols, imports });
+    pending.push({
+      disk: file,
+      contentHash,
+      normHash: sha1(norm),
+      normText: norm.slice(0, SNAPSHOT_CAP),
+      symbols,
+      imports,
+    });
   }
   const deletedRows = dbFiles.filter((r) => !fileSet.has(r.path));
 
@@ -104,23 +125,23 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
   const stmt = {
     touchFile: db.prepare(`UPDATE files SET mtime = ?, size = ?, indexed_at = ? WHERE id = ?`),
     upsertFile: db.prepare(
-      `INSERT INTO files (path, lang, content_hash, norm_hash, mtime, size, indexed_at, deleted_at)
-       VALUES (@path, @lang, @hash, @normHash, @mtime, @size, @now, NULL)
+      `INSERT INTO files (path, lang, content_hash, norm_hash, norm_text, mtime, size, indexed_at, deleted_at)
+       VALUES (@path, @lang, @hash, @normHash, @normText, @mtime, @size, @now, NULL)
        ON CONFLICT(path) DO UPDATE SET
-         lang = @lang, content_hash = @hash, norm_hash = @normHash, mtime = @mtime, size = @size,
-         indexed_at = @now, deleted_at = NULL
+         lang = @lang, content_hash = @hash, norm_hash = @normHash, norm_text = @normText,
+         mtime = @mtime, size = @size, indexed_at = @now, deleted_at = NULL
        RETURNING id`,
     ),
     aliveSymbols: db.prepare(
       `SELECT id, qname, body_hash FROM symbols WHERE file_id = ? AND deleted_at IS NULL`,
     ),
     insertSymbol: db.prepare(
-      `INSERT INTO symbols (file_id, kind, name, qname, start_line, end_line, signature, body_hash, updated_at)
-       VALUES (@fileId, @kind, @name, @qname, @startLine, @endLine, @signature, @bodyHash, @now)`,
+      `INSERT INTO symbols (file_id, kind, name, qname, start_line, end_line, signature, body_hash, norm_text, updated_at)
+       VALUES (@fileId, @kind, @name, @qname, @startLine, @endLine, @signature, @bodyHash, @normText, @now)`,
     ),
     updateSymbol: db.prepare(
       `UPDATE symbols SET kind = @kind, name = @name, start_line = @startLine, end_line = @endLine,
-         signature = @signature, body_hash = @bodyHash, updated_at = @now
+         signature = @signature, body_hash = @bodyHash, norm_text = @normText, updated_at = @now
        WHERE id = @id`,
     ),
     softDeleteSymbol: db.prepare(`UPDATE symbols SET deleted_at = ? WHERE id = ?`),
@@ -154,6 +175,7 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
         lang: p.disk.lang,
         hash: p.contentHash,
         normHash: p.normHash,
+        normText: p.normText,
         mtime: p.disk.mtime,
         size: p.disk.size,
         now,
@@ -181,6 +203,7 @@ export async function indexRepo(opts: IndexOptions): Promise<IndexResult> {
             endLine: s.endLine,
             signature: s.signature,
             bodyHash: s.bodyHash,
+            normText: s.normText,
           });
           if (old.body_hash !== s.bodyHash) {
             diffs.push({

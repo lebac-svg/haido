@@ -15,25 +15,29 @@ export function confirmMemory(db: Db, memoryId: string, now = Date.now()): void 
   if (anchors.length === 0) throw new Error(`memory '${memoryId}' not found or has no anchors`);
 
   const currentSymbol = db.prepare(
-    `SELECT s.body_hash AS hash, f.path AS path FROM symbols s JOIN files f ON f.id = s.file_id
+    `SELECT s.body_hash AS hash, s.norm_text AS snap, f.path AS path
+     FROM symbols s JOIN files f ON f.id = s.file_id
      WHERE s.qname = ? AND s.deleted_at IS NULL`,
   );
   const currentFile = db.prepare(
-    `SELECT norm_hash AS hash FROM files WHERE path = ? AND deleted_at IS NULL`,
+    `SELECT norm_hash AS hash, norm_text AS snap FROM files WHERE path = ? AND deleted_at IS NULL`,
   );
   const update = db.prepare(
-    `UPDATE anchors SET hash_at_link = ?, path = ?, status = 'fresh', stale_since = NULL, meta = NULL
+    `UPDATE anchors SET hash_at_link = ?, snapshot = ?, path = ?, status = 'fresh',
+       stale_since = NULL, meta = NULL
      WHERE id = ?`,
   );
 
   db.transaction(() => {
     for (const a of anchors) {
-      let cur: { hash: string; path: string } | undefined;
+      let cur: { hash: string; snap: string | null; path: string } | undefined;
       if (a.target_kind === 'symbol') {
-        cur = currentSymbol.get(a.qname) as { hash: string; path: string } | undefined;
+        cur = currentSymbol.get(a.qname) as
+          | { hash: string; snap: string | null; path: string }
+          | undefined;
       } else {
-        const f = currentFile.get(a.qname) as { hash: string } | undefined;
-        cur = f ? { hash: f.hash, path: a.qname } : undefined;
+        const f = currentFile.get(a.qname) as { hash: string; snap: string | null } | undefined;
+        cur = f ? { hash: f.hash, snap: f.snap, path: a.qname } : undefined;
       }
       if (!cur) {
         throw new Error(
@@ -41,7 +45,7 @@ export function confirmMemory(db: Db, memoryId: string, now = Date.now()): void 
             `use move (--to <qname>) or retire instead of confirm`,
         );
       }
-      update.run(cur.hash, cur.path, a.id);
+      update.run(cur.hash, cur.snap, cur.path, a.id);
     }
     rollupMemoryStatus(db, memoryId, now);
   })();
@@ -62,33 +66,38 @@ export function moveAnchor(
   if ('symbol' in to) {
     const target = db
       .prepare(
-        `SELECT s.qname, s.body_hash, f.path FROM symbols s JOIN files f ON f.id = s.file_id
+        `SELECT s.qname, s.body_hash, s.norm_text, f.path FROM symbols s
+         JOIN files f ON f.id = s.file_id
          WHERE s.qname = ? AND s.deleted_at IS NULL`,
       )
-      .get(to.symbol) as { qname: string; body_hash: string; path: string } | undefined;
+      .get(to.symbol) as
+      | { qname: string; body_hash: string; norm_text: string | null; path: string }
+      | undefined;
     if (!target) throw new Error(`unknown symbol '${to.symbol}'`);
     db.prepare(
       `UPDATE anchors SET target_kind = 'symbol', qname = ?, path = ?, hash_at_link = ?,
-         status = 'fresh', stale_since = NULL, meta = ? WHERE id = ?`,
+         snapshot = ?, status = 'fresh', stale_since = NULL, meta = ? WHERE id = ?`,
     ).run(
       target.qname,
       target.path,
       target.body_hash,
+      target.norm_text,
       JSON.stringify({ moved_from: anchor.qname }),
       anchorId,
     );
   } else {
     const target = db
-      .prepare(`SELECT path, norm_hash FROM files WHERE path = ? AND deleted_at IS NULL`)
-      .get(to.file) as { path: string; norm_hash: string } | undefined;
+      .prepare(`SELECT path, norm_hash, norm_text FROM files WHERE path = ? AND deleted_at IS NULL`)
+      .get(to.file) as { path: string; norm_hash: string; norm_text: string | null } | undefined;
     if (!target) throw new Error(`unknown file '${to.file}'`);
     db.prepare(
       `UPDATE anchors SET target_kind = 'file', qname = ?, path = ?, hash_at_link = ?,
-         status = 'fresh', stale_since = NULL, meta = ? WHERE id = ?`,
+         snapshot = ?, status = 'fresh', stale_since = NULL, meta = ? WHERE id = ?`,
     ).run(
       target.path,
       target.path,
       target.norm_hash,
+      target.norm_text,
       JSON.stringify({ moved_from: anchor.qname }),
       anchorId,
     );

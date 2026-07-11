@@ -1,4 +1,5 @@
 import { t, type Lang } from '../core/lang.js';
+import { tokenDiff } from '../memory/diff.js';
 import type { AnchorRow, MemoryRow } from '../memory/store.js';
 import type { IndexSummary } from './commands.js';
 
@@ -52,7 +53,7 @@ export function formatMemoryLine(
 }
 
 export function formatStale(
-  memories: Array<MemoryRow & { anchors: AnchorRow[] }>,
+  memories: Array<MemoryRow & { anchors: Array<AnchorRow & { current_text?: string | null }> }>,
   lang: Lang = 'en',
 ): string {
   if (memories.length === 0) return t('stale_empty', lang);
@@ -64,7 +65,10 @@ export function formatStale(
         if (a.status === 'drift') {
           const oldHash = String(meta['old_hash'] ?? a.hash_at_link).slice(0, 8);
           const newHash = String(meta['new_hash'] ?? '?').slice(0, 8);
-          return `   ⚠️ drift  #${String(a.id)} ${a.qname} (${oldHash} → ${newHash})`;
+          const head = `   ⚠️ drift  #${String(a.id)} ${a.qname} (${oldHash} → ${newHash})`;
+          return a.snapshot && a.current_text
+            ? `${head}\n      Δ ${tokenDiff(a.snapshot, a.current_text)}`
+            : head;
         }
         const candidates = Array.isArray(meta['candidates'])
           ? (meta['candidates'] as string[])

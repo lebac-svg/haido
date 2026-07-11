@@ -9,6 +9,8 @@ export interface SymbolInfo {
   endLine: number; // 1-based
   signature: string;
   bodyHash: string;
+  /** normalize(body) capped at SNAPSHOT_CAP — feeds drift diffs at review time. */
+  normText: string;
 }
 
 export type SymbolChange = 'added' | 'changed' | 'removed';

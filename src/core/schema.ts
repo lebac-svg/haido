@@ -2,7 +2,7 @@
  * SQLite schema — single source of truth (docs/ARCHITECTURE.md §2).
  * `contains` edges are NOT stored: they are fully derived from symbols.file_id.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS files (
@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS files (
   lang         TEXT NOT NULL,
   content_hash TEXT NOT NULL,          -- sha1 of raw file bytes (rename detection)
   norm_hash    TEXT NOT NULL,          -- sha1(normalize(whole file)) — file-anchor fingerprint
+  norm_text    TEXT,                   -- normalize(whole file), capped — feeds drift diffs
   mtime        INTEGER NOT NULL,
   size         INTEGER NOT NULL,
   indexed_at   INTEGER NOT NULL,
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS symbols (
   end_line     INTEGER NOT NULL,
   signature    TEXT,
   body_hash    TEXT NOT NULL,          -- sha1(normalize(body)) — see indexer/normalize.ts
+  norm_text    TEXT,                   -- normalize(body), capped — feeds drift diffs
   updated_at   INTEGER NOT NULL,
   deleted_at   INTEGER                 -- soft delete (staleness engine correlates later)
 );
@@ -67,6 +69,7 @@ CREATE TABLE IF NOT EXISTS anchors (
   qname         TEXT NOT NULL,         -- snapshot at link time (no hard FK: symbols may vanish)
   path          TEXT NOT NULL,
   hash_at_link  TEXT NOT NULL,
+  snapshot      TEXT,                  -- normalize(target) at link/confirm time — the "old" side of drift diffs
   status        TEXT NOT NULL DEFAULT 'fresh' CHECK (status IN ('fresh','drift','missing','moved')),
   stale_since   INTEGER,
   meta          TEXT

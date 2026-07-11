@@ -62,10 +62,15 @@ export interface AnchorRow {
   qname: string;
   path: string;
   hash_at_link: string;
+  /** normalize(target) at link/confirm time — the "old" side of a drift diff. */
+  snapshot: string | null;
   status: 'fresh' | 'drift' | 'missing' | 'moved';
   stale_since: number | null;
   meta: string | null;
 }
+
+/** An anchor as the review queue sees it: with the CURRENT normalized text attached. */
+export type ReviewAnchor = AnchorRow & { current_text: string | null };
 
 export function newMemoryId(now: number): string {
   return `m_${now.toString(36)}${randomBytes(4).toString('hex')}`;
@@ -106,8 +111,8 @@ export function remember(db: Db, input: RememberInput): RememberResult {
      VALUES (?, ?, ?, ?, ?, 'fresh', ?, ?, ?, ?)`,
   );
   const insertAnchor = db.prepare(
-    `INSERT INTO anchors (memory_id, target_kind, qname, path, hash_at_link, status)
-     VALUES (?, ?, ?, ?, ?, 'fresh')`,
+    `INSERT INTO anchors (memory_id, target_kind, qname, path, hash_at_link, snapshot, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'fresh')`,
   );
   db.transaction(() => {
     insertMemory.run(
@@ -121,7 +126,7 @@ export function remember(db: Db, input: RememberInput): RememberResult {
       now,
       now,
     );
-    for (const r of resolved) insertAnchor.run(id, r.kind, r.qname, r.path, r.hash);
+    for (const r of resolved) insertAnchor.run(id, r.kind, r.qname, r.path, r.hash, r.snapshot);
   })();
 
   return { id, duplicates };
@@ -132,17 +137,20 @@ interface ResolvedAnchor {
   qname: string;
   path: string;
   hash: string;
+  snapshot: string | null;
 }
 
 function resolveAnchor(db: Db, target: AnchorTarget): ResolvedAnchor {
   if ('symbol' in target) {
     const row = db
       .prepare(
-        `SELECT s.qname, s.body_hash, f.path FROM symbols s
+        `SELECT s.qname, s.body_hash, s.norm_text, f.path FROM symbols s
          JOIN files f ON f.id = s.file_id
          WHERE s.qname = ? AND s.deleted_at IS NULL`,
       )
-      .get(target.symbol) as { qname: string; body_hash: string; path: string } | undefined;
+      .get(target.symbol) as
+      | { qname: string; body_hash: string; norm_text: string | null; path: string }
+      | undefined;
     if (!row) {
       const tail = target.symbol.includes('#')
         ? (target.symbol.split('#').pop() ?? target.symbol)
@@ -157,13 +165,27 @@ function resolveAnchor(db: Db, target: AnchorTarget): ResolvedAnchor {
         hints.length > 0 ? ` Did you mean: ${hints.map((h) => h.qname).join(' | ')}` : '';
       throw new Error(`unknown symbol '${target.symbol}' (index up to date?).${hint}`);
     }
-    return { kind: 'symbol', qname: row.qname, path: row.path, hash: row.body_hash };
+    return {
+      kind: 'symbol',
+      qname: row.qname,
+      path: row.path,
+      hash: row.body_hash,
+      snapshot: row.norm_text,
+    };
   }
   const row = db
-    .prepare(`SELECT path, norm_hash FROM files WHERE path = ? AND deleted_at IS NULL`)
-    .get(target.file) as { path: string; norm_hash: string } | undefined;
+    .prepare(`SELECT path, norm_hash, norm_text FROM files WHERE path = ? AND deleted_at IS NULL`)
+    .get(target.file) as
+    | { path: string; norm_hash: string; norm_text: string | null }
+    | undefined;
   if (!row) throw new Error(`unknown file '${target.file}' (repo-relative POSIX path expected)`);
-  return { kind: 'file', qname: row.path, path: row.path, hash: row.norm_hash };
+  return {
+    kind: 'file',
+    qname: row.path,
+    path: row.path,
+    hash: row.norm_hash,
+    snapshot: row.norm_text,
+  };
 }
 
 function findDuplicates(db: Db, title: string, body: string): DuplicateCandidate[] {
@@ -196,11 +218,26 @@ export function getMemory(db: Db, id: string): (MemoryRow & { anchors: AnchorRow
   return { ...memory, anchors };
 }
 
-export function listNeedsReview(db: Db): Array<MemoryRow & { anchors: AnchorRow[] }> {
+export function listNeedsReview(db: Db): Array<MemoryRow & { anchors: ReviewAnchor[] }> {
   const rows = db
     .prepare(`SELECT id FROM memories WHERE status = 'needs_review' ORDER BY updated_at`)
     .all() as Array<{ id: string }>;
+  const currentSymbolText = db.prepare(
+    `SELECT norm_text AS t FROM symbols WHERE qname = ? AND deleted_at IS NULL`,
+  );
+  const currentFileText = db.prepare(
+    `SELECT norm_text AS t FROM files WHERE path = ? AND deleted_at IS NULL`,
+  );
   return rows
     .map((r) => getMemory(db, r.id))
-    .filter((m): m is MemoryRow & { anchors: AnchorRow[] } => m !== null);
+    .filter((m): m is MemoryRow & { anchors: AnchorRow[] } => m !== null)
+    .map((m) => ({
+      ...m,
+      anchors: m.anchors.map((a): ReviewAnchor => {
+        const row = (
+          a.target_kind === 'symbol' ? currentSymbolText.get(a.qname) : currentFileText.get(a.qname)
+        ) as { t: string | null } | undefined;
+        return { ...a, current_text: row?.t ?? null };
+      }),
+    }));
 }

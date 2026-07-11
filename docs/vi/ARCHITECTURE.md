@@ -210,6 +210,7 @@ fresh ── hash lệch ──────────────▶ drift ─
 
 - Memory có ≥ 1 anchor `drift|missing` → `memories.status = needs_review` (vẫn được recall, kèm nhãn ⚠ — "biết là đang nghi ngờ" tốt hơn im lặng).
 - `stale_memories` trả kèm ngữ cảnh phán xử: `old_hash/new_hash`, signature mới, và (nếu lấy được nhanh qua `git log -L`) commit chạm gần nhất.
+- **Diff khi review (v0.2.2):** anchor lưu `snapshot` = normalize(target) tại thời điểm link/confirm; index lưu `norm_text` hiện tại. Drift → `haido stale` render `Δ` diff mức token (`⟨- cũ⟩ ⟨+ mới⟩`, ngữ cảnh nén bằng `…`) — người review thấy NGAY code đổi gì, không phải tự tra hai hash. Snapshot chỉ được cập nhật khi anchor đồng bộ trở lại (confirm/heal/moved); lúc drift nó chính là "phía cũ" của diff nên bất động. Anchor thiếu snapshot (db trước v2) được reconcile tự backfill.
 - **Reanchor heuristics** khi `missing`: (1) tìm `qname` y hệt ở file khác (file split) → gợi ý move; (2) tìm symbol có `body_hash` trùng (move nguyên vẹn) → auto move; (3) không thấy → để người/agent quyết.
 
 ## 6. Recall Engine

@@ -1,6 +1,6 @@
 import type { Node, Tree } from 'web-tree-sitter';
 import type { SymbolInfo, SymbolKind } from '../core/types.js';
-import { hashNode } from './normalize.js';
+import { normalizedText, sha1, SNAPSHOT_CAP } from './normalize.js';
 import type { LangId } from './parser.js';
 
 /**
@@ -35,6 +35,7 @@ export function extractSymbols(tree: Tree, lang: LangId, relPath: string): Symbo
     if (dup > 0) qname = `${qname}@L${String(hashTarget.startPosition.row + 1)}`;
     const text = defNode.text;
     const nl = text.indexOf('\n');
+    const norm = normalizedText(hashTarget);
     out.push({
       kind,
       name,
@@ -42,7 +43,8 @@ export function extractSymbols(tree: Tree, lang: LangId, relPath: string): Symbo
       startLine: hashTarget.startPosition.row + 1,
       endLine: hashTarget.endPosition.row + 1,
       signature: (nl === -1 ? text : text.slice(0, nl)).trim().slice(0, 160),
-      bodyHash: hashNode(hashTarget),
+      bodyHash: sha1(norm), // hash of the FULL normalized text — cap applies to the copy only
+      normText: norm.slice(0, SNAPSHOT_CAP),
     });
   };
 

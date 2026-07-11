@@ -32,6 +32,12 @@ export function sha1(text: string): string {
   return createHash('sha1').update(text).digest('hex');
 }
 
+/**
+ * Stored copy of the normalized text is capped (diff rendering needs the head,
+ * not megabytes); the HASH is always computed over the FULL text.
+ */
+export const SNAPSHOT_CAP = 20_000;
+
 export function hashNode(node: Node): string {
   return sha1(normalizedText(node));
 }

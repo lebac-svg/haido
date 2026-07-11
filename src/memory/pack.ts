@@ -92,10 +92,10 @@ export function importPack(db: Db, dir: string): PackImportResult {
   const result: PackImportResult = { imported: 0, updated: 0, unchanged: 0, skipped: [] };
 
   const currentSymbolHash = db.prepare(
-    `SELECT body_hash AS h FROM symbols WHERE qname = ? AND deleted_at IS NULL`,
+    `SELECT body_hash AS h, norm_text AS snap FROM symbols WHERE qname = ? AND deleted_at IS NULL`,
   );
   const currentFileHash = db.prepare(
-    `SELECT norm_hash AS h FROM files WHERE path = ? AND deleted_at IS NULL`,
+    `SELECT norm_hash AS h, norm_text AS snap FROM files WHERE path = ? AND deleted_at IS NULL`,
   );
   const getMemory = db.prepare(`SELECT * FROM memories WHERE id = ?`);
   const getAnchors = db.prepare(
@@ -111,8 +111,8 @@ export function importPack(db: Db, dir: string): PackImportResult {
   );
   const deleteAnchors = db.prepare(`DELETE FROM anchors WHERE memory_id = ?`);
   const insertAnchor = db.prepare(
-    `INSERT INTO anchors (memory_id, target_kind, qname, path, hash_at_link, status)
-     VALUES (?, ?, ?, ?, ?, 'fresh')`,
+    `INSERT INTO anchors (memory_id, target_kind, qname, path, hash_at_link, snapshot, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'fresh')`,
   );
 
   const resolveHash = (a: ParsedAnchor): string => {
@@ -124,11 +124,22 @@ export function importPack(db: Db, dir: string): PackImportResult {
     return row?.h ?? '';
   };
 
+  // The "old side" text of a future drift diff is only known when the recorded
+  // fingerprint matches this machine's current code — otherwise the pre-drift
+  // body never existed here and the snapshot honestly stays NULL.
+  const resolveSnapshot = (a: ParsedAnchor, hash: string): string | null => {
+    const row = (
+      a.kind === 'symbol' ? currentSymbolHash.get(a.ref) : currentFileHash.get(a.ref)
+    ) as { h: string; snap: string | null } | undefined;
+    return row && row.h === hash ? row.snap : null;
+  };
+
   const writeAnchors = (memoryId: string, anchors: ParsedAnchor[]): void => {
     deleteAnchors.run(memoryId);
     for (const a of anchors) {
       const anchorPath = a.kind === 'symbol' ? (a.ref.split('#')[0] ?? a.ref) : a.ref;
-      insertAnchor.run(memoryId, a.kind, a.ref, anchorPath, resolveHash(a));
+      const hash = resolveHash(a);
+      insertAnchor.run(memoryId, a.kind, a.ref, anchorPath, hash, resolveSnapshot(a, hash));
     }
   };
 

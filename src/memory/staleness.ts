@@ -33,6 +33,7 @@ interface AnchorJoinRow {
   qname: string;
   path: string;
   hash_at_link: string;
+  snapshot: string | null;
   status: 'fresh' | 'drift' | 'missing' | 'moved';
   stale_since: number | null;
 }
@@ -41,35 +42,40 @@ export function reconcileAnchors(db: Db, nowInput?: number): StalenessReport {
   const now = nowInput ?? Date.now();
   const anchors = db
     .prepare(
-      `SELECT a.id, a.memory_id, a.target_kind, a.qname, a.path, a.hash_at_link, a.status, a.stale_since
+      `SELECT a.id, a.memory_id, a.target_kind, a.qname, a.path, a.hash_at_link, a.snapshot,
+              a.status, a.stale_since
        FROM anchors a JOIN memories m ON m.id = a.memory_id
        WHERE m.status != 'retired'`,
     )
     .all() as AnchorJoinRow[];
 
   const symbolByQname = db.prepare(
-    `SELECT s.body_hash AS hash, f.path AS path FROM symbols s
+    `SELECT s.body_hash AS hash, s.norm_text AS snap, f.path AS path FROM symbols s
      JOIN files f ON f.id = s.file_id
      WHERE s.qname = ? AND s.deleted_at IS NULL`,
   );
   const symbolTwins = db.prepare(
-    `SELECT s.qname, f.path FROM symbols s JOIN files f ON f.id = s.file_id
+    `SELECT s.qname, s.norm_text AS snap, f.path FROM symbols s JOIN files f ON f.id = s.file_id
      WHERE s.body_hash = ? AND s.deleted_at IS NULL LIMIT 3`,
   );
   const symbolNameHints = db.prepare(
     `SELECT qname FROM symbols WHERE name = ? AND deleted_at IS NULL LIMIT 3`,
   );
   const fileByPath = db.prepare(
-    `SELECT norm_hash AS hash, content_hash FROM files WHERE path = ? AND deleted_at IS NULL`,
+    `SELECT norm_hash AS hash, norm_text AS snap, content_hash FROM files
+     WHERE path = ? AND deleted_at IS NULL`,
   );
   const fileTwins = db.prepare(
-    `SELECT path FROM files WHERE norm_hash = ? AND deleted_at IS NULL LIMIT 3`,
+    `SELECT path, norm_text AS snap FROM files WHERE norm_hash = ? AND deleted_at IS NULL LIMIT 3`,
   );
+  // snapshot only moves when the anchor is (back) in sync with the code — a
+  // drifting anchor keeps its old snapshot: that IS the "old" side of the diff.
   const setStatus = db.prepare(
     `UPDATE anchors SET status = @status, stale_since = @staleSince, meta = @meta,
-       qname = @qname, path = @path
+       qname = @qname, path = @path, snapshot = COALESCE(@snapshot, snapshot)
      WHERE id = @id`,
   );
+  const backfillSnapshot = db.prepare(`UPDATE anchors SET snapshot = ? WHERE id = ?`);
 
   const events: AnchorEvent[] = [];
 
@@ -86,6 +92,7 @@ export function reconcileAnchors(db: Db, nowInput?: number): StalenessReport {
           meta: next.meta ? JSON.stringify(next.meta) : null,
           qname: next.qname,
           path: next.path,
+          snapshot: next.status === 'fresh' || next.status === 'moved' ? (next.snap ?? null) : null,
         });
         if (next.event) {
           events.push({
@@ -96,6 +103,9 @@ export function reconcileAnchors(db: Db, nowInput?: number): StalenessReport {
             detail: next.detail,
           });
         }
+      } else if (a.status === 'fresh' && a.snapshot === null && next.snap != null) {
+        // pre-v2 anchor (or import without a local twin): heal the snapshot in place
+        backfillSnapshot.run(next.snap, a.id);
       }
     }
     // Memory rollup
@@ -122,18 +132,22 @@ export function reconcileAnchors(db: Db, nowInput?: number): StalenessReport {
     status: AnchorJoinRow['status'];
     qname: string;
     path: string;
+    /** Current normalized text — set only when the anchor is in sync with the code. */
+    snap?: string | null;
     meta?: Record<string, unknown>;
     event?: AnchorEvent['event'];
     detail?: string;
   }
 
   function evaluate(a: AnchorJoinRow): Evaluated {
-    let current: { hash: string; path: string } | undefined;
+    let current: { hash: string; snap: string | null; path: string } | undefined;
     if (a.target_kind === 'symbol') {
-      current = symbolByQname.get(a.qname) as { hash: string; path: string } | undefined;
+      current = symbolByQname.get(a.qname) as
+        | { hash: string; snap: string | null; path: string }
+        | undefined;
     } else {
-      const f = fileByPath.get(a.qname) as { hash: string } | undefined;
-      current = f ? { hash: f.hash, path: a.qname } : undefined;
+      const f = fileByPath.get(a.qname) as { hash: string; snap: string | null } | undefined;
+      current = f ? { hash: f.hash, snap: f.snap, path: a.qname } : undefined;
     }
 
     if (current) {
@@ -144,6 +158,7 @@ export function reconcileAnchors(db: Db, nowInput?: number): StalenessReport {
           status: 'fresh',
           qname: a.qname,
           path: current.path,
+          snap: current.snap,
           ...(healed ? { event: 'healed' as const } : {}),
         };
       }
@@ -159,17 +174,19 @@ export function reconcileAnchors(db: Db, nowInput?: number): StalenessReport {
     // Target vanished — look for an identical twin (file rename / symbol move).
     const twins =
       a.target_kind === 'symbol'
-        ? (symbolTwins.all(a.hash_at_link) as Array<{ qname: string; path: string }>)
-        : (fileTwins.all(a.hash_at_link) as Array<{ path: string }>).map((f) => ({
-            qname: f.path,
-            path: f.path,
-          }));
+        ? (symbolTwins.all(a.hash_at_link) as Array<
+            { qname: string; snap: string | null; path: string }
+          >)
+        : (fileTwins.all(a.hash_at_link) as Array<{ path: string; snap: string | null }>).map(
+            (f) => ({ qname: f.path, snap: f.snap, path: f.path }),
+          );
 
     if (twins.length === 1 && twins[0]) {
       return {
         status: 'moved',
         qname: twins[0].qname,
         path: twins[0].path,
+        snap: twins[0].snap,
         meta: { moved_from: a.qname },
         event: 'moved',
         detail: `${a.qname} -> ${twins[0].qname}`,

@@ -25,11 +25,26 @@ function migrate(db: Db): void {
   }
   const row = db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get() as
     { value: string } | undefined;
-  const version = row ? Number(row.value) : 0;
+  let version = row ? Number(row.value) : 0;
+
+  if (version === 1) {
+    // v2: normalized-text snapshots so drift reviews can show WHAT changed.
+    // No data backfill here — the indexer re-parses any row whose norm_text
+    // is NULL on its next pass (self-healing beats one-shot migration tricks).
+    db.exec(
+      `ALTER TABLE files ADD COLUMN norm_text TEXT;
+       ALTER TABLE symbols ADD COLUMN norm_text TEXT;
+       ALTER TABLE anchors ADD COLUMN snapshot TEXT;`,
+    );
+    version = 2;
+    db.prepare(`UPDATE meta SET value = ? WHERE key = 'schema_version'`).run(String(version));
+  }
+
   if (version !== SCHEMA_VERSION) {
     throw new Error(
       `haido.db schema version ${version} != expected ${SCHEMA_VERSION}. ` +
-        `No migration path yet (pre-release) — delete .haido/haido.db and re-run 'haido index'.`,
+        `No migration path from this version — delete .haido/haido.db and re-run 'haido index' ` +
+        `(memories are safe if they live in a pack: 'haido import --pack <dir>').`,
     );
   }
 }
