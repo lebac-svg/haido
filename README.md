@@ -37,17 +37,32 @@ The agent never has to *remember to remember*. SessionStart injects a compressed
 plus the standing laws; touching a file injects the notes anchored around it (once per
 session); editing code that invalidates a note triggers an immediate warning.
 
-## Install (from source — npm package coming soon)
+## See it live
+
+`haido viz --live` serves the map on 127.0.0.1 and streams every change into the open page:
+new files bloom in, the file being edited glows and cools down, and a note flashes yellow
+the very moment a save makes it drift.
+
+<!-- TODO(record): docs/assets/live-map.gif — ~30s capture; shot list in docs/DEMO.md -->
 
 ```bash
-git clone https://github.com/lebac-svg/haido.git && cd haido && npm install && npm run build
+haido viz --live --open   # leave it on a second monitor while your agent works
+```
+
+## Install
+
+```bash
+npm install -g haido      # or: npx haido <command> ad-hoc
 
 cd /your/project
-node /path/to/haido/dist/cli.js init                  # index + git mining + starter haido.toml
-node /path/to/haido/dist/cli.js install claude-code \
-     --command node /path/to/haido/dist/cli.js        # wires hooks + MCP (.mcp.json)
+haido init                # index + git mining + starter haido.toml
+haido install claude-code # wires hooks + MCP (.mcp.json)
 # open a new Claude Code session in your project — it now has a memory
 ```
+
+From source instead: `git clone https://github.com/lebac-svg/haido.git && cd haido && npm install && npm run build`,
+then use `node /path/to/haido/dist/cli.js` in place of `haido` (and pass
+`--command node /path/to/haido/dist/cli.js` to `install claude-code`).
 
 `haido install claude-desktop` registers the MCP server for Claude Desktop
 (on-demand recall — Desktop has no hooks). Once published: `npx haido init && npx haido install claude-code`.
