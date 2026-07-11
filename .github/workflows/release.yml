@@ -1,0 +1,37 @@
+name: Release
+
+# Publishes to npm when a version tag is pushed (e.g. v0.2.2).
+# Auth: npm Trusted Publishing (OIDC) — configure once on npmjs.com:
+#   package haido → Settings → Trusted Publisher → GitHub Actions
+#   owner: lebac-svg · repo: haido · workflow: release.yml
+# No tokens, no OTP: the workflow identity IS the credential, and
+# --provenance links the published tarball back to this exact commit.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # OIDC for trusted publishing + provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest # trusted publishing needs a recent npm client
+      - run: npm ci
+      - run: npm run check
+      - name: Tag must match package.json version
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "package.json is $PKG but tag is $TAG" && exit 1
+          fi
+      - run: npm publish --provenance --access public
