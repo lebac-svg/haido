@@ -43,9 +43,12 @@ session); editing code that invalidates a note triggers an immediate warning.
 new files bloom in, the file being edited glows and cools down, and a note flashes yellow
 the very moment a save makes it drift.
 
-![haido live map — agent edits glow cyan, a human edit makes an anchored note flash yellow, then it heals on revert](docs/assets/live-map.gif)
+![haido bridge — the 2D chart surrounded by instruments: 3D globe, live activity band, inspector, ship's log; agent edits glow cyan and a drifting note flashes yellow](docs/assets/live-map.gif)
 
-*Recorded headlessly against this very repo: cyan = the agent editing `src/viz/*`, a new file blooming in, then a human edit drifting note `m_boot_010` (yellow flash) and healing when reverted.*
+*The bridge, recorded headlessly against this very repo: the 2D chart with its instruments —
+3D globe, activity band, inspector (structure + notes of the selection) and the ship's log.
+Cyan = the agent editing `src/viz/*`, a new file blooms in, then a human edit drifts note
+`m_boot_010` (yellow flash, logged in the band) and heals when reverted.*
 
 ```bash
 haido viz --live --open   # leave it on a second monitor while your agent works
@@ -100,8 +103,8 @@ then use `node /path/to/haido/dist/cli.js` in place of `haido` (and pass
 | **Hooks** (Claude Code) | Auto-inject: project map at session start (re-briefed after compaction); anchored notes per touched file; drift warnings right after an edit invalidates a note; one stop-time reflection nudge when a busy session recorded nothing |
 | **MCP tools** | `recall` · `remember` · `find_related` · `map_overview` · `stale_memories` · `reanchor` |
 | **CLI** | `init · index [--watch] · serve · install · remember · recall · related · overview · stale · reanchor · export · import · viz [--live] · stats · doctor` |
-| **`haido viz`** | A self-contained interactive map (one HTML file, zero deps): files colored by directory, import/co-change links with spotlight-on-hover, memories as diamond satellites tethered to their anchors, 2D reading view + 3D showcase mode |
-| **`haido viz --live`** | The same map as a living thing, served on 127.0.0.1: new files bloom in as they appear, the file being edited glows and cools down, notes flash yellow the moment an edit makes them drift — watch your agent work in real time |
+| **`haido viz`** | A self-contained bridge console (one HTML file, zero deps): the 2D chart — files colored by directory, import/co-change links with spotlight-on-hover, memories as diamond satellites — surrounded by instruments: a rotating 3D globe, an inspector (per-symbol structure + anchored notes of the selection) and the ship's log (every note on a dated timeline) |
+| **`haido viz --live`** | The same bridge as a living thing, served on 127.0.0.1: new files bloom in, the file being edited glows (cyan = your agent, white = a human), notes flash yellow the moment an edit makes them drift, and the activity band journals every event with a timestamp — watch your agent work in real time |
 | **Memory pack** | `export/import --pack`: one markdown file per note, committed to git — knowledge travels with the repo and is reviewed in PRs; recorded fingerprints carry staleness across machines |
 
 ## How staleness works (the core trick)
