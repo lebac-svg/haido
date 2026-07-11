@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cmdViz } from '../src/cli/commands.js';
+import { cmdExportViz, cmdViz } from '../src/cli/commands.js';
 import { openDb } from '../src/core/db.js';
 import { ensureWorkspace } from '../src/core/workspace.js';
 import { indexRepo } from '../src/indexer/indexer.js';
@@ -52,9 +52,25 @@ describe('haido viz', () => {
   it('bakes the UI language at generation time (en default, vi opt-in)', () => {
     const en = buildVizHtml('{"files":[],"memories":[],"edges":[]}', 'x');
     expect(en).toContain('only files with notes');
+    expect(en).toContain("Ship's log"); // bridge panel labels are translated too
+    expect(en).toContain('Inspector');
     expect(en).not.toContain('chỉ file có ghi chú');
     const vi = buildVizHtml('{"files":[],"memories":[],"edges":[]}', 'x', 'vi');
     expect(vi).toContain('chỉ file có ghi chú');
+    expect(vi).toContain('Nhật ký hải trình');
+  });
+
+  it('viz JSON carries structure (syms) and note timeline (created)', () => {
+    const data = JSON.parse(cmdExportViz(tmp)) as {
+      files: Array<{ path: string; syms: Array<{ k: string; n: string; l1: number }> }>;
+      memories: Array<{ created: number }>;
+    };
+    const board = data.files.find((f) => f.path === 'src/board.ts');
+    expect(board).toBeDefined();
+    expect(board?.syms.length).toBeGreaterThan(0);
+    expect(board?.syms[0]?.k).toBeTruthy();
+    expect(board?.syms[0]?.l1).toBeGreaterThan(0);
+    expect(typeof data.memories[0]?.created).toBe('number');
   });
 
   it('escapes </script> injection in embedded data', () => {
