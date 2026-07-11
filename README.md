@@ -43,7 +43,9 @@ session); editing code that invalidates a note triggers an immediate warning.
 new files bloom in, the file being edited glows and cools down, and a note flashes yellow
 the very moment a save makes it drift.
 
-<!-- TODO(record): docs/assets/live-map.gif — ~30s capture; shot list in docs/DEMO.md -->
+![haido live map — agent edits glow cyan, a human edit makes an anchored note flash yellow, then it heals on revert](docs/assets/live-map.gif)
+
+*Recorded headlessly against this very repo: cyan = the agent editing `src/viz/*`, a new file blooming in, then a human edit drifting note `m_boot_010` (yellow flash) and healing when reverted.*
 
 ```bash
 haido viz --live --open   # leave it on a second monitor while your agent works

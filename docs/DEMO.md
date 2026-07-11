@@ -3,6 +3,13 @@
 A ~30-second capture that shows the whole value proposition without a word of
 narration. Referenced from README ("See it live").
 
+> The current README GIF is a **headless, scripted capture** of the map alone —
+> produced by `experiments/demo-recorder/record.mjs` against a staged clone
+> (24s: agent edits glow cyan → a new file blooms → a human edit makes
+> `m_boot_010` flash yellow → revert heals it). Re-run it after any viz change.
+> The shot list below is the fancier two-window version (Claude Code + map)
+> that needs a human screen recording.
+
 ## Setup
 
 - Any repo with a `.haido` workspace (this repo itself works — dogfood on camera).
