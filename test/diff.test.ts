@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatStale } from '../src/cli/format.js';
+import { buildVizJson } from '../src/viz/data.js';
 import { openDb } from '../src/core/db.js';
 import { ensureWorkspace } from '../src/core/workspace.js';
 import { indexRepo } from '../src/indexer/indexer.js';
@@ -72,6 +73,18 @@ describe('drift review shows the actual code diff', () => {
     expect(out).toContain('Δ');
     expect(out).toContain('⟨- true⟩');
     expect(out).toContain('⟨+ from !== to⟩');
+
+    // the review station on the bridge gets the same diff via the viz payload
+    const viz = JSON.parse(buildVizJson(db)) as {
+      memories: Array<{
+        status: string;
+        anchors: Array<{ status: string; diff?: string; snapshot?: unknown }>;
+      }>;
+    };
+    const flagged = viz.memories.find((m) => m.status === 'needs_review');
+    const drifted = flagged?.anchors.find((a) => a.status === 'drift');
+    expect(drifted?.diff).toContain('⟨+ from !== to⟩');
+    expect(drifted?.snapshot).toBeUndefined(); // raw snapshots never ship to the page
     db.close();
   });
 });

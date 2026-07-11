@@ -62,7 +62,14 @@ const EN_PAIRS: ReadonlyArray<readonly [string, string]> = [
   ['hay đổi cùng nhau', 'changes together'],
   ['lọc theo đường dẫn…', 'filter by path…'],
   [' cần review (code đã đổi)', ' needs review (code changed)'],
+  [
+    'vẫn đúng → --confirm · hết đúng → --retire · code dời chỗ → --move',
+    'still true → --confirm · no longer true → --retire · code moved → --move',
+  ],
   ['Nhật ký hải trình', "Ship's log"],
+  ['Trạm review', 'Review station'],
+  ['chép lệnh', 'copy command'],
+  ['đã chép ✓', 'copied ✓'],
   [" cần review)'", " need review)'"],
   ['○ mất kết nối', '○ disconnected'],
   ['agent vừa sửa', 'agent just edited'],
@@ -145,8 +152,8 @@ const TEMPLATE = `<!doctype html>
     flex: 1; min-height: 0; padding: 14px 10px 10px; gap: 12px;
     display: grid;
     grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1.35fr) minmax(0, 1fr);
-    grid-template-areas: "globe chart" "deck deck";
+    grid-template-rows: minmax(0, 1.35fr) auto minmax(0, 1fr);
+    grid-template-areas: "globe chart" "alarm alarm" "deck deck";
   }
   body.maponly main.bridge {
     grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr);
@@ -166,6 +173,29 @@ const TEMPLATE = `<!doctype html>
   #globeFrame { grid-area: globe; }
   #chartFrame { grid-area: chart; }
   #deck { grid-area: deck; display: flex; gap: 12px; min-height: 0; }
+  /* the alarm instrument: absent in calm seas, lights up when knowledge drifts */
+  #reviewFrame { grid-area: alarm; display: none; max-height: 216px; border-color: rgba(250,178,25,0.4); }
+  #reviewFrame > .plate { color: var(--warn); }
+  body.hasreview #reviewFrame { display: flex; }
+  .rv { border: 1px solid var(--hair); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+  .rv .t { color: var(--ink); font-weight: 600; cursor: pointer; }
+  .rv .t:hover { text-decoration: underline; }
+  .rv .anchor { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); margin-top: 3px; }
+  .rv .diff { font-family: var(--mono); font-size: 11.5px; margin-top: 4px; word-break: break-all; }
+  .rv .diff .del { color: #e5484d; }
+  .rv .diff .add { color: #35b06f; }
+  .rv .cmd { margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .rv .cmd code {
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-2);
+    background: var(--page); border: 1px solid var(--hair); border-radius: 6px; padding: 2px 7px;
+    user-select: all;
+  }
+  .rv .cmd button {
+    font: 11px system-ui, sans-serif; color: var(--ink-2); background: none;
+    border: 1px solid var(--hair); border-radius: 6px; padding: 2px 8px; cursor: pointer;
+  }
+  .rv .cmd button:hover { border-color: var(--ink-3); color: var(--ink); }
+  .rv .hint2 { color: var(--ink-3); font-size: 11px; margin-top: 4px; }
   #feedFrame { flex: 1; }
   #inspectFrame { flex: 1.3; }
   #logFrame { flex: 1; }
@@ -254,6 +284,10 @@ const TEMPLATE = `<!doctype html>
   <section class="frame" id="chartFrame">
     <span class="plate">Hải đồ 2D</span>
     <div class="stage" id="chartStage"><canvas id="canvas"></canvas><div id="tip"></div></div>
+  </section>
+  <section class="frame" id="reviewFrame">
+    <span class="plate">Trạm review</span>
+    <div class="body" id="review"></div>
   </section>
   <div id="deck">
     <section class="frame" id="feedFrame">
@@ -474,6 +508,7 @@ const TEMPLATE = `<!doctype html>
     refreshStats();
     renderLegend();
     renderLog();
+    renderReview();
     if (selected) {
       if (selected.dying) select(null);
       else select(selected); // panel re-renders with fresh content
@@ -502,6 +537,7 @@ const TEMPLATE = `<!doctype html>
     if (changed || changedM) {
       refreshStats();
       renderLog();
+      renderReview();
       if (selected && ((selected.kind === 'file' && !byId[selected.id]) ||
         (selected.kind === 'mem' && !memById[selected.id]))) select(null);
       if (hover && ((hover.kind === 'file' && !byId[hover.id]) ||
@@ -578,6 +614,53 @@ const TEMPLATE = `<!doctype html>
     });
   }
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  // ---- the review station: drifted knowledge, its diff, and the way out ----
+  function diffHtml(d) {
+    var s = escH(d);
+    s = s.replace(/⟨- (.*?)⟩/g, '<span class="del">⟨- $1⟩</span>');
+    s = s.replace(/⟨[+] (.*?)⟩/g, '<span class="add">⟨+ $1⟩</span>');
+    return s;
+  }
+  function renderReview() {
+    var box = document.getElementById('review');
+    var list = mems.filter(function (m) { return !m.dying && m.status === 'needs_review'; });
+    document.body.classList.toggle('hasreview', list.length > 0);
+    if (list.length === 0) { box.innerHTML = ''; return; }
+    var html = '';
+    list.forEach(function (m) {
+      var cmd = 'haido reanchor ' + m.id + ' --confirm';
+      html += '<div class="rv">' +
+        '<div class="t" data-id="' + escH(m.id) + '">' + (TYPE_ICON[m.type] || '•') + ' ' +
+        escH(m.title) + ' <span class="flag">⚠ cần review (code đã đổi)</span></div>';
+      (m.anchors || []).forEach(function (a) {
+        if (a.status !== 'drift' && a.status !== 'missing') return;
+        html += '<div class="anchor">' + (a.status === 'drift' ? '⚠ drift' : '❓ missing') + '  ' +
+          escH(a.qname) + '</div>';
+        if (a.diff) html += '<div class="diff">Δ ' + diffHtml(a.diff) + '</div>';
+      });
+      html += '<div class="cmd"><code>' + escH(cmd) + '</code>' +
+        '<button data-copy="' + escH(cmd) + '">chép lệnh</button></div>' +
+        '<div class="hint2">vẫn đúng → --confirm · hết đúng → --retire · code dời chỗ → --move</div>' +
+        '</div>';
+    });
+    box.innerHTML = html;
+    box.querySelectorAll('.t[data-id]').forEach(function (el) {
+      el.addEventListener('click', function () { focusEntityById(el.getAttribute('data-id')); });
+    });
+    box.querySelectorAll('button[data-copy]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        try {
+          navigator.clipboard.writeText(el.getAttribute('data-copy')).then(function () {
+            el.textContent = 'đã chép ✓';
+            setTimeout(function () { el.textContent = 'chép lệnh'; }, 1500);
+          });
+        } catch (e2) {
+          // file:// without clipboard permission — the <code> is select-all anyway
+        }
+      });
+    });
+  }
 
   // ---- the activity band: what is happening right now (live only) ----
   var lastFeedKey = '', lastFeedAt = 0;

@@ -1,4 +1,5 @@
 import type { Db } from '../core/db.js';
+import { tokenDiff } from '../memory/diff.js';
 
 /**
  * JSON snapshot for the visualization (stable from v0.1 as promised in SPEC §6).
@@ -50,9 +51,31 @@ export function buildVizJson(db: Db): string {
     )
     .all() as Array<Record<string, unknown>>;
   const anchorsFor = db.prepare(
-    `SELECT target_kind AS kind, qname, path, status FROM anchors WHERE memory_id = ?`,
+    `SELECT target_kind AS kind, qname, path, status, snapshot FROM anchors WHERE memory_id = ?`,
   );
-  for (const m of memories) m['anchors'] = anchorsFor.all(m['id']);
+  const currentSymbolText = db.prepare(
+    `SELECT norm_text AS t FROM symbols WHERE qname = ? AND deleted_at IS NULL`,
+  );
+  const currentFileText = db.prepare(
+    `SELECT norm_text AS t FROM files WHERE path = ? AND deleted_at IS NULL`,
+  );
+  for (const m of memories) {
+    const anchors = anchorsFor.all(m['id']) as Array<Record<string, unknown>>;
+    for (const a of anchors) {
+      // the review station shows WHAT changed: old→new token diff per drifted
+      // anchor (computed here — snapshots are too big to ship to the page)
+      if (m['status'] === 'needs_review' && a['status'] === 'drift' && a['snapshot']) {
+        const row = (
+          a['kind'] === 'symbol'
+            ? currentSymbolText.get(a['qname'])
+            : currentFileText.get(a['qname'])
+        ) as { t: string | null } | undefined;
+        if (row?.t) a['diff'] = tokenDiff(a['snapshot'] as string, row.t);
+      }
+      delete a['snapshot'];
+    }
+    m['anchors'] = anchors;
+  }
   const edges = db
     .prepare(
       `SELECT fs.path AS src, fd.path AS dst, e.kind, e.weight FROM edges e

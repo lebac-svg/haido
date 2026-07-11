@@ -54,6 +54,7 @@ describe('haido viz', () => {
     expect(en).toContain('only files with notes');
     expect(en).toContain("Ship's log"); // bridge panel labels are translated too
     expect(en).toContain('Inspector');
+    expect(en).toContain('Review station');
     expect(en).not.toContain('chỉ file có ghi chú');
     const vi = buildVizHtml('{"files":[],"memories":[],"edges":[]}', 'x', 'vi');
     expect(vi).toContain('chỉ file có ghi chú');
