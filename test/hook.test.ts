@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDb } from '../src/core/db.js';
-import { ensureWorkspace } from '../src/core/workspace.js';
+import { dbPath, ensureWorkspace } from '../src/core/workspace.js';
 import { indexRepo } from '../src/indexer/indexer.js';
 import { remember } from '../src/memory/store.js';
 import { runHook } from '../src/integrations/claude-code/hook.js';
@@ -85,6 +85,60 @@ describe('claude-code hook runner', () => {
     const ctx = (JSON.parse(out ?? '') as HookOut).hookSpecificOutput.additionalContext;
     expect(ctx).toContain('DRIFT');
     expect(ctx).toContain('reanchor');
+  });
+
+  it('stop blocks once with a reflection prompt after real edits, then stays silent', async () => {
+    const edit = (file: string): string =>
+      payload({ tool_name: 'Edit', tool_input: { file_path: path.join(tmp, file) } });
+    await runHook('post-tool', tmp, edit('src/board.ts'));
+    await runHook('post-tool', tmp, edit('src/utils.ts'));
+
+    const first = await runHook('stop', tmp, payload({}));
+    expect(first).not.toBeNull();
+    const parsed = JSON.parse(first ?? '') as { decision: string; reason: string };
+    expect(parsed.decision).toBe('block');
+    expect(parsed.reason).toContain('remember');
+    expect(parsed.reason).toContain('src/board.ts');
+
+    expect(await runHook('stop', tmp, payload({}))).toBeNull(); // at most once per session
+  });
+
+  it('stop stays silent for trivial sessions, active stop-loops, and recorded sessions', async () => {
+    const edit = (file: string): string =>
+      payload({ tool_name: 'Edit', tool_input: { file_path: path.join(tmp, file) } });
+
+    await runHook('post-tool', tmp, edit('src/board.ts'));
+    expect(await runHook('stop', tmp, payload({}))).toBeNull(); // only 1 file touched
+
+    await runHook('post-tool', tmp, edit('src/utils.ts'));
+    expect(await runHook('stop', tmp, payload({ stop_hook_active: true }))).toBeNull(); // never loop
+
+    const db = openDb(dbPath(tmp)); // the session records something → no nudge
+    remember(db, {
+      type: 'decision',
+      title: 'Recorded during session',
+      body: 'x',
+      why: 'silences the stop nudge',
+      anchors: [{ file: 'src/board.ts' }],
+      author: 'test',
+    });
+    db.close();
+    expect(await runHook('stop', tmp, payload({}))).toBeNull();
+  });
+
+  it('session-start(source=compact) re-briefs the map and resets injection dedup', async () => {
+    const absWin = path.join(tmp, 'src', 'board.ts');
+    const read = (): string => payload({ tool_name: 'Read', tool_input: { file_path: absWin } });
+    await runHook('session-start', tmp, payload({ source: 'startup' }));
+    expect(await runHook('post-tool', tmp, read())).not.toBeNull();
+    expect(await runHook('post-tool', tmp, read())).toBeNull(); // dedup active
+
+    const rebrief = await runHook('session-start', tmp, payload({ source: 'compact' }));
+    expect(rebrief).not.toBeNull();
+    const ctx = (JSON.parse(rebrief ?? '') as HookOut).hookSpecificOutput.additionalContext;
+    expect(ctx).toContain('Toạ độ 0-based'); // the standing law survives the compaction
+
+    expect(await runHook('post-tool', tmp, read())).not.toBeNull(); // dedup reset — re-injected
   });
 
   it('never throws: outside files, unknown payloads, missing workspace → silence', async () => {

@@ -70,6 +70,7 @@ export function installClaudeCode(opts: {
 
   ensureHook('SessionStart', null, quoteJoin([...cmd, 'hook', 'session-start']));
   ensureHook('PostToolUse', 'Read|Edit|Write|MultiEdit', quoteJoin([...cmd, 'hook', 'post-tool']));
+  ensureHook('Stop', null, quoteJoin([...cmd, 'hook', 'stop']));
   writeJsonWithBackup(settingsPath, settings, wrote);
 
   // 2) MCP server -> .mcp.json (project scope, picked up by Claude Code)

@@ -12,25 +12,45 @@ import { recall } from '../../recall/rank.js';
 
 /**
  * Claude Code hook runner — the "tự nhớ" experience (SPEC §8, contract m_boot_007):
- *   SessionStart          -> project map + standing laws (once per session)
+ *   SessionStart          -> project map + standing laws (once per session); after a
+ *                            COMPACTION (source: "compact") the injected-set resets and
+ *                            the map is re-briefed — compaction erased all of it.
  *   PostToolUse Read/Edit -> memories anchored around the touched file (each injected
- *                            at most once per session); Edit/Write additionally re-index
- *                            and WARN when the edit just made a memory stale.
+ *                            at most once per session); Edit/Write additionally re-index,
+ *                            WARN when the edit just made a memory stale, and record the
+ *                            touched file for the end-of-session reflection.
+ *   Stop                  -> if the session edited files but recorded nothing, block the
+ *                            stop ONCE with a reflection prompt ("anything worth
+ *                            remembering?"). Never loops: stop_hook_active and the
+ *                            once-per-session flag both guard it.
  * A hook must NEVER break the agent: any failure logs to stderr and returns null.
  */
-export type HookKind = 'session-start' | 'post-tool';
+export type HookKind = 'session-start' | 'post-tool' | 'stop';
 
 interface HookPayload {
   session_id?: string;
   hook_event_name?: string;
   tool_name?: string;
   tool_input?: { file_path?: string };
+  /** SessionStart: 'startup' | 'resume' | 'clear' | 'compact' */
+  source?: string;
+  /** Stop: true when the agent is already continuing because a stop hook blocked. */
+  stop_hook_active?: boolean;
 }
 
 interface SessionState {
   injected: string[];
   overviewDone?: boolean;
+  /** Wall-clock of the first hook fire — memories created after this count as "recorded". */
+  startedAt?: number;
+  /** Repo-relative files Edit/Write-ed this session (feeds the Stop reflection). */
+  touched?: string[];
+  /** The reflection nudge fired — at most once per session. */
+  stopNudged?: boolean;
 }
+
+/** Edits to fewer files than this never trigger the Stop reflection. */
+const STOP_NUDGE_MIN_TOUCHED = 2;
 
 export async function runHook(
   kind: HookKind,
@@ -48,16 +68,50 @@ export async function runHook(
         await indexRepo({ root, db });
         reconcileAnchors(db);
         const state = loadState(root, sessionId);
-        if (state.overviewDone) return null;
-        state.overviewDone = true;
-        saveState(root, sessionId, state);
-        return out(
-          'SessionStart',
+        state.startedAt ??= Date.now();
+        const overview = (): string =>
           mapOverview(db, {
             budgetTokens: config.recall.overviewBudgetTokens,
             lang: config.ui.lang,
+          });
+        if (payload.source === 'compact') {
+          // Compaction just erased everything ever injected: reset the dedup set
+          // (next touch re-injects) and re-brief the map right now.
+          state.injected = [];
+          state.overviewDone = true;
+          saveState(root, sessionId, state);
+          return out('SessionStart', overview());
+        }
+        if (state.overviewDone) {
+          saveState(root, sessionId, state);
+          return null;
+        }
+        state.overviewDone = true;
+        saveState(root, sessionId, state);
+        return out('SessionStart', overview());
+      }
+
+      if (kind === 'stop') {
+        if (payload.stop_hook_active === true) return null; // never loop a blocked stop
+        const state = loadState(root, sessionId);
+        const touched = state.touched ?? [];
+        if (state.stopNudged || touched.length < STOP_NUDGE_MIN_TOUCHED) return null;
+        const since = state.startedAt ?? Date.now();
+        const written = (
+          db.prepare(`SELECT count(*) AS c FROM memories WHERE created_at >= ?`).get(since) as {
+            c: number;
+          }
+        ).c;
+        if (written > 0) return null; // the session already recorded something
+        state.stopNudged = true;
+        saveState(root, sessionId, state);
+        return JSON.stringify({
+          decision: 'block',
+          reason: t('stop_reflection', config.ui.lang, {
+            n: touched.length,
+            files: touched.slice(-5).join(', '),
           }),
-        );
+        });
       }
 
       const fileAbs = payload.tool_input?.file_path;
@@ -65,12 +119,24 @@ export async function runHook(
       const rel = toRepoRelative(root, fileAbs);
       if (!rel) return null;
 
+      const state = loadState(root, sessionId);
+      let dirty = false;
+      if (state.startedAt === undefined) {
+        state.startedAt = Date.now();
+        dirty = true;
+      }
+
       const warnings: string[] = [];
       if (
         payload.tool_name === 'Edit' ||
         payload.tool_name === 'Write' ||
         payload.tool_name === 'MultiEdit'
       ) {
+        state.touched ??= [];
+        if (!state.touched.includes(rel)) {
+          state.touched.push(rel);
+          dirty = true;
+        }
         await indexRepo({ root, db });
         const report = reconcileAnchors(db);
         for (const e of report.events) {
@@ -86,18 +152,18 @@ export async function runHook(
         }
       }
 
-      const state = loadState(root, sessionId);
       const result = recall(db, {
         file: rel,
         budgetTokens: config.recall.budgetTokens,
         excludeIds: state.injected,
         lang: config.ui.lang,
       });
-      if (result.hits.length === 0 && warnings.length === 0) return null;
       if (result.hits.length > 0) {
         state.injected.push(...result.hits.map((h) => h.memory.id));
-        saveState(root, sessionId, state);
+        dirty = true;
       }
+      if (dirty) saveState(root, sessionId, state);
+      if (result.hits.length === 0 && warnings.length === 0) return null;
       const text = [result.hits.length > 0 ? result.text : null, ...warnings]
         .filter((s): s is string => s !== null)
         .join('\n');

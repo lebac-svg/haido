@@ -48,6 +48,7 @@ describe('installClaudeCode', () => {
     ) as Settings;
     expect(again.hooks['SessionStart']).toHaveLength(1);
     expect(again.hooks['PostToolUse']).toHaveLength(1);
+    expect(again.hooks['Stop']).toHaveLength(1);
   });
 
   it('preserves existing settings and backs the file up', () => {
@@ -64,7 +65,9 @@ describe('installClaudeCode', () => {
       readFileSync(path.join(tmp, '.claude', 'settings.json'), 'utf8'),
     ) as Settings;
     expect(settings.keepMe).toBe(7);
-    expect(settings.hooks['Stop']).toHaveLength(1);
+    expect(settings.hooks['Stop']).toHaveLength(2); // the user's own hook + haido's
+    expect(settings.hooks['Stop']?.[0]?.hooks[0]?.command).toBe('x'); // untouched
+    expect(settings.hooks['Stop']?.[1]?.hooks[0]?.command).toBe('haido hook stop');
     expect(settings.hooks['SessionStart']).toHaveLength(1);
     expect(readFileSync(path.join(tmp, '.claude', 'settings.json.bak-haido'), 'utf8')).toContain(
       'keepMe',

@@ -69,6 +69,18 @@ const STR = {
     en: 'map updated · files: {files} · notes: {mems} · viewers: {clients}',
     vi: 'đã cập nhật bản đồ · file: {files} · ghi chú: {mems} · người xem: {clients}',
   },
+  stop_reflection: {
+    en:
+      'haido: this session edited {n} files ({files}) but recorded no memory. Look back once: ' +
+      'any settled decision, gotcha that cost time, or invariant made explicit? If yes, record it ' +
+      "with the haido remember tool (why + anchor required; one fact per note; in the user's language). " +
+      'If nothing is worth keeping, say so briefly and finish.',
+    vi:
+      'haido: phiên này đã sửa {n} file ({files}) mà chưa ghi ghi nhớ nào. Nhìn lại một lượt: ' +
+      'có quyết định đã chốt, bẫy tốn thời gian, hay invariant vừa thành rõ ràng không? Nếu có, ghi ' +
+      'bằng tool remember của haido (bắt buộc why + anchor; mỗi ghi chú một fact; theo ngôn ngữ của user). ' +
+      'Nếu không có gì đáng giữ, nói ngắn gọn rồi kết thúc.',
+  },
   hook_drift_warning: {
     en:
       '⚠ haido: note [{id}] anchored at `{qname}` just went {state} because of this change — ' +

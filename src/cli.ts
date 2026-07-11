@@ -119,9 +119,9 @@ program
 
 program
   .command('hook <kind>')
-  .description('(internal) Claude Code hook runner: session-start | post-tool')
+  .description('(internal) Claude Code hook runner: session-start | post-tool | stop')
   .action(async (kind: string) => {
-    if (kind !== 'session-start' && kind !== 'post-tool') {
+    if (kind !== 'session-start' && kind !== 'post-tool' && kind !== 'stop') {
       console.error(`haido hook: unknown kind '${kind}'`);
       return; // exit 0 — a hook must never break the agent
     }
