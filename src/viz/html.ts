@@ -35,7 +35,7 @@ export function buildVizHtml(
     for (const [vi, en] of EN_PAIRS) page = page.replaceAll(vi, en);
   }
   return page
-    .replace('__REPO_NAME__', escapeHtml(repoName))
+    .replaceAll('__REPO_NAME__', escapeHtml(repoName)) // appears in <title> AND <h1>
     .replace('__HAIDO_LIVE__', live ? '1' : '0')
     .replace('"__HAIDO_DATA__"', safeJson);
 }

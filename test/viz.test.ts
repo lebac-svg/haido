@@ -44,6 +44,7 @@ describe('haido viz', () => {
     expect(html).toContain('src/board.ts'); // file node present in data
     expect(html).toContain('Toạ độ 0-based'); // memory travels into the page
     expect(html).not.toContain('__HAIDO_DATA__'); // placeholder replaced
+    expect(html).not.toContain('__REPO_NAME__'); // BOTH occurrences (title + h1) replaced
     expect(html).not.toContain('src="http'); // strictly self-contained
     expect(html).not.toContain('https://'); // no external references at all
   });
