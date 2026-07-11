@@ -318,6 +318,10 @@ const TEMPLATE = `<!doctype html>
   var OTHER = '#52514e';
   var TYPE_ICON = { invariant: '⛔', gotcha: '🪤', decision: '📌', convention: '📐', todo: '📝' };
   var KIND_ICON = { function: 'ƒ', method: 'ƒ', class: '◆', const: '≡', type: 'τ' };
+  var JOURNAL_ICON = {
+    'file': ['✎', ''], 'file-agent': ['⚡', 'agent'],
+    'mem-warn': ['⚠', 'warn'], 'mem-ok': ['✅', 'ok'], 'inject': ['🤖', 'agent']
+  };
   var NO_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // ---- model state — reconciled in place by applyData() (live mode re-feeds it) ----
@@ -422,10 +426,8 @@ const TEMPLATE = `<!doctype html>
       var node = memById[m.id];
       if (node) {
         if (node.status !== m.status) {
-          node.hotAt = now; // fresh↔needs_review flips flash
-          events.push(m.status === 'needs_review'
-            ? ['⚠', 'warn', (m.title || '') + ' · ⚠ cần review', m.id]
-            : ['✅', 'ok', (m.title || '') + ' · đã lành', m.id]);
+          node.hotAt = now; // fresh↔needs_review flips flash (feed line: server journal)
+          node.hotSrc = '';
         }
         node.type = m.type; node.status = m.status;
         node.title = m.title || ''; node.body = m.body || ''; node.why = m.why || '';
@@ -502,20 +504,13 @@ const TEMPLATE = `<!doctype html>
       (hot.mems || []).forEach(function (id) {
         if (memById[id]) { memById[id].hotAt = now; memById[id].hotSrc = ''; }
       });
-      (hot.files || []).forEach(function (p) {
-        var n2 = byId[p];
-        if (n2 && !n2.dying && n2.born < now - 1) {
-          events.push(n2.hotSrc === 'agent' ? ['⚡', 'agent', p, p] : ['✎', '', p, p]);
-        }
-      });
-      // recall made visible: the hook injected these notes into the agent's context
+      // file/mem/inject feed lines come from the server's journal (msg.events)
+      // recall made visible: cyan pulse (the feed line comes from the journal)
       (hot.injected || []).forEach(function (id) {
         var mi2 = memById[id];
         if (mi2 && !mi2.dying) {
           mi2.hotAt = now;
           mi2.hotSrc = 'agent';
-          injectCount++;
-          events.push(['🤖', 'agent', 'tiêm ghi chú: ' + mi2.title, id]);
         }
       });
     }
@@ -682,6 +677,28 @@ const TEMPLATE = `<!doctype html>
   }
 
   // ---- the activity band: what is happening right now (live only) ----
+  // journal entries carry what/why: symbol diffs (+ ± −), sources (⇠)
+  function journalLabel(e) {
+    var label = e.label || '';
+    var d = e.d || {};
+    if (e.k === 'inject') {
+      label = 'tiêm ghi chú: ' + label + (d.from ? ' ⇠ ' + d.from : '');
+    } else if (e.k === 'mem-warn' || e.k === 'mem-ok') {
+      label = label + (d.q ? ' ⇠ ' + d.q : '');
+    } else {
+      var parts = [];
+      (d.a || []).forEach(function (n) { parts.push('+ ' + n); });
+      (d.c || []).forEach(function (n) { parts.push('± ' + n); });
+      (d.r || []).forEach(function (n) { parts.push('− ' + n); });
+      if (parts.length > 0) label += ' — ' + parts.join(' · ');
+    }
+    return label;
+  }
+  function feedJournal(e, noDedupe) {
+    var icon = JOURNAL_ICON[e.k] || ['•', ''];
+    feedEvent([icon[0], icon[1], journalLabel(e), e.id], e.t, noDedupe);
+  }
+
   var lastFeedKey = '', lastFeedAt = 0;
   function feedEvent(ev, ts, noDedupe) {
     var icon = ev[0], cls = ev[1], label = ev[2], targetId = ev[3];
@@ -700,6 +717,7 @@ const TEMPLATE = `<!doctype html>
     var li = document.createElement('li');
     li.innerHTML = '<span class="t">' + stamp + '</span><span class="' + cls + '">' + icon +
       '</span> ' + escH(label);
+    li.title = stamp + '  ' + icon + '  ' + label; // narrow panel truncates — hover tells all
     if (targetId) li.addEventListener('click', function () { focusEntityById(targetId); });
     ul.insertBefore(li, ul.firstChild);
     while (ul.children.length > 160) ul.removeChild(ul.lastChild);
@@ -1611,23 +1629,20 @@ const TEMPLATE = `<!doctype html>
     setLive(false);
     // the journal survives restarts — replay the recent tail into the band once
     var backlogDone = false;
-    var BK = {
-      'file': ['✎', ''], 'file-agent': ['⚡', 'agent'],
-      'mem-warn': ['⚠', 'warn'], 'mem-ok': ['✅', 'ok'], 'inject': ['🤖', 'agent']
-    };
     var es = new EventSource('events');
     es.addEventListener('map', function (ev) {
       var msg = JSON.parse(ev.data);
       if (msg.backlog && !backlogDone) {
         backlogDone = true;
         msg.backlog.forEach(function (e) {
-          var bk = BK[e.k] || ['•', ''];
           if (e.k === 'inject') injectCount++;
-          feedEvent(
-            [bk[0], bk[1], (e.k === 'inject' ? 'tiêm ghi chú: ' : '') + (e.label || ''), e.id],
-            e.t, true);
+          feedJournal(e, true);
         });
       }
+      (msg.events || []).forEach(function (e) {
+        if (e.k === 'inject') injectCount++;
+        feedJournal(e, false);
+      });
       applyData(msg.data || {}, msg.hot);
       setLive(true);
     });

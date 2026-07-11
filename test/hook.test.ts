@@ -98,6 +98,9 @@ describe('claude-code hook runner', () => {
     const injected = Object.values(state.lastInject ?? {});
     expect(injected.length).toBeGreaterThan(0);
     expect(typeof injected[0]).toBe('number');
+    expect(
+      Object.values((state as { injectFrom?: Record<string, string> }).injectFrom ?? {}),
+    ).toContain('src/board.ts'); // and the WHY: which file triggered it
   });
 
   it('stop blocks once with a reflection prompt after real edits, then stays silent', async () => {

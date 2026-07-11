@@ -87,6 +87,8 @@ export interface JournalEvent {
   k: string;
   label: string;
   id?: string;
+  /** What/why detail: {a,c,r}: symbol names added/changed/removed · {from}: file that triggered an inject · {q}: anchor that drifted/healed. */
+  d?: Record<string, unknown>;
 }
 
 function journalPath(root: string): string {
@@ -144,6 +146,30 @@ export function readAgentInjects(root: string): Map<string, number> {
   return readSessionStamps(root, 'lastInject');
 }
 
+/** Which file each injection came from (id → repo-relative path). */
+export function readInjectSources(root: string): Map<string, string> {
+  const out = new Map<string, string>();
+  try {
+    const dir = path.join(haidoDir(root), 'session');
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.json')) continue;
+      try {
+        const parsed = JSON.parse(readFileSync(path.join(dir, name), 'utf8')) as {
+          injectFrom?: Record<string, string>;
+        };
+        for (const [id, file] of Object.entries(parsed.injectFrom ?? {})) {
+          if (typeof file === 'string') out.set(id, file);
+        }
+      } catch {
+        // skip unreadable state files
+      }
+    }
+  } catch {
+    // no session dir yet
+  }
+  return out;
+}
+
 function readSessionStamps(root: string, field: 'lastTouch' | 'lastInject'): Map<string, number> {
   const out = new Map<string, number>();
   try {
@@ -185,13 +211,21 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
     mems: string[],
     agent: string[],
     injected: string[],
+    events: JournalEvent[],
     backlog?: JournalEvent[],
   ): string =>
     `event: map\ndata: ${JSON.stringify({
       data,
       hot: { files, mems, agent, injected },
+      events,
       ...(backlog ? { backlog } : {}),
     })}\n\n`;
+
+  /** What/why context for the journal: symbol diffs, drift anchors, inject sources. */
+  interface CommitDetail {
+    fileSyms?: Map<string, { a: string[]; c: string[]; r: string[] }>;
+    memAnchor?: Map<string, string>;
+  }
 
   const commit = (
     nextJson: string,
@@ -199,6 +233,7 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
     hotFiles: string[],
     hotMems: string[],
     injected: string[] = [],
+    detail: CommitDetail = {},
   ): void => {
     const known = new Set(next.files.map((f) => f.path));
     const knownMems = new Set(next.memories.map((m) => m.id));
@@ -213,27 +248,44 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
     json = nextJson;
     parsed = next;
     htmlCache = null;
-    const frame = frameFor(next, files, mems, [...agentSet], injects);
-    for (const res of clients) res.write(frame);
-    // persist what just happened — pages joining later still see the story
+    // the journal entries ARE the feed: what happened, to what, and why
     const now = Date.now();
     const title = new Map(next.memories.map((m) => [m.id, (m['title'] as string) || m.id]));
     const status = new Map(next.memories.map((m) => [m.id, m['status'] as string]));
+    const injectSources = injects.length > 0 ? readInjectSources(root) : new Map<string, string>();
     const journal: JournalEvent[] = [];
     for (const p of files) {
-      journal.push({ t: now, k: agentSet.has(p) ? 'file-agent' : 'file', label: p, id: p });
+      const syms = detail.fileSyms?.get(p);
+      journal.push({
+        t: now,
+        k: agentSet.has(p) ? 'file-agent' : 'file',
+        label: p,
+        id: p,
+        ...(syms && (syms.a.length || syms.c.length || syms.r.length) ? { d: syms } : {}),
+      });
     }
     for (const id of mems) {
+      const q = detail.memAnchor?.get(id);
       journal.push({
         t: now,
         k: status.get(id) === 'needs_review' ? 'mem-warn' : 'mem-ok',
         label: title.get(id) ?? id,
         id,
+        ...(q ? { d: { q } } : {}),
       });
     }
     for (const id of injects) {
-      journal.push({ t: now, k: 'inject', label: title.get(id) ?? id, id });
+      const from = injectSources.get(id);
+      journal.push({
+        t: now,
+        k: 'inject',
+        label: title.get(id) ?? id,
+        id,
+        ...(from ? { d: { from } } : {}),
+      });
     }
+    const frame = frameFor(next, files, mems, [...agentSet], injects, journal);
+    for (const res of clients) res.write(frame);
     if (journal.length > 0) appendJournal(root, journal);
     opts.onUpdate?.({ changedFiles: files, changedMemories: mems, clients: clients.size });
   };
@@ -266,11 +318,28 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
       ...(opts.debounceMs !== undefined ? { debounceMs: opts.debounceMs } : {}),
       onCycle: (c) => {
         const { nextJson, next } = rebuild();
+        // symbol diffs per file: the feed says WHAT changed, not just where
+        const fileSyms = new Map<string, { a: string[]; c: string[]; r: string[] }>();
+        for (const diff of c.index.diffs) {
+          const [p, name] = [
+            diff.qname.slice(0, diff.qname.indexOf('#')),
+            diff.qname.slice(diff.qname.indexOf('#') + 1),
+          ];
+          const entry = fileSyms.get(p) ?? { a: [], c: [], r: [] };
+          const bucket =
+            diff.change === 'added' ? entry.a : diff.change === 'removed' ? entry.r : entry.c;
+          if (bucket.length < 4) bucket.push(name);
+          fileSyms.set(p, entry);
+        }
+        const memAnchor = new Map<string, string>();
+        for (const e of c.staleness.events) memAnchor.set(e.memoryId, e.qname);
         commit(
           nextJson,
           next,
           c.changedPaths,
           c.staleness.events.map((e) => e.memoryId),
+          [],
+          { fileSyms, memAnchor },
         );
       },
       ...(opts.onError ? { onError: opts.onError } : {}),
@@ -327,7 +396,7 @@ export async function serveLiveViz(opts: LiveVizOptions): Promise<LiveVizHandle>
         Connection: 'keep-alive',
       });
       res.write('retry: 1500\n\n');
-      res.write(frameFor(parsed, [], [], [], [], readJournalTail(root)));
+      res.write(frameFor(parsed, [], [], [], [], [], readJournalTail(root)));
       clients.add(res);
       req.on('close', () => clients.delete(res));
       return;

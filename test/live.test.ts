@@ -12,10 +12,19 @@ import { readAgentTouches, serveLiveViz, type LiveVizHandle } from '../src/viz/l
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 
+interface JEvent {
+  t: number;
+  k: string;
+  label: string;
+  id?: string;
+  d?: Record<string, unknown>;
+}
+
 interface MapFrame {
   data: { files: Array<{ path: string }>; memories: Array<{ id: string }> };
   hot: { files: string[]; mems: string[]; agent: string[]; injected: string[] };
-  backlog?: Array<{ t: number; k: string; label: string; id?: string }>;
+  events?: JEvent[];
+  backlog?: JEvent[];
 }
 
 /** Incremental SSE parser: next() resolves with the next `event: map` payload. */
@@ -171,6 +180,9 @@ describe('haido viz --live', () => {
       expect(frame.hot.files).toContain('src/utils.ts');
       expect(frame.hot.agent).toContain('src/board.ts'); // hook-stamped → agent
       expect(frame.hot.agent).not.toContain('src/utils.ts'); // unstamped → human/other
+      // the feed line says WHAT changed, not just where
+      const ev = frame.events?.find((e) => e.id === 'src/board.ts');
+      expect(ev?.d?.['a']).toContain('nudge');
     },
   );
 
@@ -192,10 +204,16 @@ describe('haido viz --live', () => {
     mkdirSync(sessionDir, { recursive: true });
     writeFileSync(
       path.join(sessionDir, 'sess-inject.json'),
-      JSON.stringify({ injected: [id], lastInject: { [id]: Date.now() } }),
+      JSON.stringify({
+        injected: [id],
+        lastInject: { [id]: Date.now() },
+        injectFrom: { [id]: 'src/board.ts' },
+      }),
     );
     const frame = await next();
     expect(frame.hot.injected).toContain(id);
+    const injectEv = frame.events?.find((e) => e.k === 'inject' && e.id === id);
+    expect(injectEv?.d?.['from']).toBe('src/board.ts'); // the WHY travels with the event
 
     // the journal persists it — a page connecting later replays the story
     const res2 = await fetch(new URL('/events', handle.url));

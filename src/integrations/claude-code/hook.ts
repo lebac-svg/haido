@@ -49,6 +49,8 @@ interface SessionState {
   lastTouch?: Record<string, number>;
   /** Last injection per memory id (ms) — the live map shows recall actually happening. */
   lastInject?: Record<string, number>;
+  /** Which file triggered each injection — the live feed shows the WHY. */
+  injectFrom?: Record<string, string>;
   /** The reflection nudge fired — at most once per session. */
   stopNudged?: boolean;
 }
@@ -165,7 +167,11 @@ export async function runHook(
       if (result.hits.length > 0) {
         state.injected.push(...result.hits.map((h) => h.memory.id));
         state.lastInject ??= {};
-        for (const h of result.hits) state.lastInject[h.memory.id] = Date.now();
+        state.injectFrom ??= {};
+        for (const h of result.hits) {
+          state.lastInject[h.memory.id] = Date.now();
+          state.injectFrom[h.memory.id] = rel;
+        }
         dirty = true;
       }
       if (dirty) saveState(root, sessionId, state);
