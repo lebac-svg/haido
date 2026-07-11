@@ -61,6 +61,14 @@ const STR = {
     en: ' ⚠️(needs review — code changed)',
     vi: ' ⚠️(cần review — code đã đổi)',
   },
+  live_serving: {
+    en: 'live map: {url} — the page updates itself as the repo changes (ctrl+c to stop)',
+    vi: 'bản đồ trực tiếp: {url} — trang tự cập nhật khi repo thay đổi (ctrl+c để dừng)',
+  },
+  live_update: {
+    en: 'map updated · files: {files} · notes: {mems} · viewers: {clients}',
+    vi: 'đã cập nhật bản đồ · file: {files} · ghi chú: {mems} · người xem: {clients}',
+  },
   hook_drift_warning: {
     en:
       '⚠ haido: note [{id}] anchored at `{qname}` just went {state} because of this change — ' +

@@ -6,6 +6,7 @@ import { configPath, loadConfig, STARTER_TOML } from '../core/config.js';
 import { openDb, type Db } from '../core/db.js';
 import type { Lang } from '../core/lang.js';
 import { dbPath, ensureWorkspace, haidoDir, workspaceExists } from '../core/workspace.js';
+import { buildVizJson } from '../viz/data.js';
 import { buildVizHtml } from '../viz/html.js';
 import { mineCoChange, type CoChangeResult } from '../git/cochange.js';
 import { indexRepo } from '../indexer/indexer.js';
@@ -234,36 +235,6 @@ export function cmdExportViz(root: string): string {
     return buildVizJson(db);
   } finally {
     db.close();
-  }
-}
-
-function buildVizJson(db: Db): string {
-  {
-    const files = db
-      .prepare(
-        `SELECT f.path, f.lang, count(s.id) AS symbols FROM files f
-         LEFT JOIN symbols s ON s.file_id = f.id AND s.deleted_at IS NULL
-         WHERE f.deleted_at IS NULL GROUP BY f.id ORDER BY f.path`,
-      )
-      .all();
-    const memories = db
-      .prepare(
-        `SELECT m.id, m.type, m.status, m.title, m.body, m.why
-         FROM memories m WHERE m.status != 'retired'`,
-      )
-      .all() as Array<Record<string, unknown>>;
-    const anchorsFor = db.prepare(
-      `SELECT target_kind AS kind, qname, path, status FROM anchors WHERE memory_id = ?`,
-    );
-    for (const m of memories) m['anchors'] = anchorsFor.all(m['id']);
-    const edges = db
-      .prepare(
-        `SELECT fs.path AS src, fd.path AS dst, e.kind, e.weight FROM edges e
-         JOIN files fs ON fs.id = e.src_id JOIN files fd ON fd.id = e.dst_id
-         ORDER BY e.kind, src, dst`,
-      )
-      .all();
-    return JSON.stringify({ version: 1, files, memories, edges }, null, 2);
   }
 }
 

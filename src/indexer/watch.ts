@@ -1,6 +1,7 @@
 import chokidar from 'chokidar';
 import path from 'node:path';
 import type { Db } from '../core/db.js';
+import { toRepoRelative } from '../core/paths.js';
 import type { IndexResult } from '../core/types.js';
 import { reconcileAnchors, type StalenessReport } from '../memory/staleness.js';
 import { indexRepo } from './indexer.js';
@@ -22,9 +23,13 @@ const IGNORED_SEGMENTS = new Set([
 export interface WatchCycle {
   index: IndexResult;
   staleness: StalenessReport;
+  /** Repo-relative POSIX paths of the raw fs events behind this cycle (saves, adds, deletes). */
+  changedPaths: string[];
 }
 
 export interface WatchHandle {
+  /** Resolves once the initial scan is done — events before that can be swallowed. */
+  ready: Promise<void>;
   close(): Promise<void>;
 }
 
@@ -53,6 +58,7 @@ export function watchRepo(opts: {
   let timer: NodeJS.Timeout | null = null;
   let running = false;
   let rerun = false;
+  const pending = new Set<string>();
 
   const cycle = async (): Promise<void> => {
     if (running) {
@@ -60,11 +66,14 @@ export function watchRepo(opts: {
       return;
     }
     running = true;
+    // Snapshot now — events landing mid-cycle stay pending and belong to the rerun.
+    const changedPaths = [...pending];
+    pending.clear();
     try {
       const index = await indexRepo({ root: opts.root, db: opts.db });
       const staleness = reconcileAnchors(opts.db);
       if (index.filesIndexed > 0 || index.filesDeleted > 0 || staleness.events.length > 0) {
-        opts.onCycle({ index, staleness });
+        opts.onCycle({ index, staleness, changedPaths });
       }
     } catch (e) {
       opts.onError?.(e);
@@ -77,14 +86,22 @@ export function watchRepo(opts: {
     }
   };
 
-  const kick = (): void => {
+  const kick = (p: string): void => {
+    const rel = toRepoRelative(opts.root, p);
+    if (rel !== null) pending.add(rel);
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => void cycle(), debounceMs);
   };
 
   watcher.on('add', kick).on('change', kick).on('unlink', kick);
+  const ready = new Promise<void>((resolve) => {
+    watcher.once('ready', () => {
+      resolve();
+    });
+  });
 
   return {
+    ready,
     close: async () => {
       if (timer) clearTimeout(timer);
       await watcher.close();

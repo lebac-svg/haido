@@ -20,6 +20,7 @@ import {
   requireDb,
 } from './cli/commands.js';
 import { formatIndexSummary, formatStale } from './cli/format.js';
+import { t } from './core/lang.js';
 import { watchRepo } from './indexer/watch.js';
 import { runHook, type HookKind } from './integrations/claude-code/hook.js';
 import {
@@ -29,6 +30,7 @@ import {
 } from './integrations/claude-code/install.js';
 import { MEMORY_TYPES, type MemoryType } from './memory/store.js';
 import { serveStdio } from './mcp/server.js';
+import { serveLiveViz } from './viz/live.js';
 import { VERSION } from './version.js';
 
 const program = new Command();
@@ -220,7 +222,35 @@ program
   .description('interactive 2D map: files, links, memories & freshness (open in a browser)')
   .option('--out <file>', 'where to write the HTML (default: .haido/map.html)')
   .option('--open', 'open it in the default browser right away')
-  .action((opts: Record<string, unknown>) => {
+  .option('--live', 'serve on 127.0.0.1 and stream every repo change into the open page')
+  .option('--port <n>', 'port for --live (default 6160)')
+  .action(async (opts: Record<string, unknown>) => {
+    if (opts['live']) {
+      const r = root();
+      const lang = getLang(r);
+      const db = requireDb(r); // stays open for the lifetime of the server
+      const handle = await serveLiveViz({
+        root: r,
+        db,
+        lang,
+        ...(opts['port'] !== undefined ? { port: Number(opts['port']) } : {}),
+        onUpdate: (u) => {
+          if (u.changedFiles.length + u.changedMemories.length > 0) {
+            console.log(
+              t('live_update', lang, {
+                files: u.changedFiles.length,
+                mems: u.changedMemories.length,
+                clients: u.clients,
+              }),
+            );
+          }
+        },
+        onError: (e) => console.error('live error:', e instanceof Error ? e.message : e),
+      });
+      console.log(t('live_serving', lang, { url: handle.url }));
+      if (opts['open']) openInBrowser(handle.url);
+      return;
+    }
     const file = cmdViz(root(), opts['out'] as string | undefined);
     console.log(`wrote ${file}`);
     if (opts['open']) openInBrowser(file);

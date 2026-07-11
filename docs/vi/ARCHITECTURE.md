@@ -331,6 +331,14 @@ Mọi toạ độ nội bộ là (col,row) 0-based; chỉ UI đổi sang 1-based
   - **Chế độ lực**: node = file, cạnh = imports (xám) + co_change (cam, đậm theo weight) — đây là phần "hệ trục/liên kết" của ý tưởng gốc.
   - Click node → panel liệt kê memory + trạng thái. Chạy `file://`, không server, không network.
 
+### 11b. Bản đồ sống — `haido viz --live` (giao 11/07/2026)
+
+Bản tĩnh giữ nguyên như trên. `--live` phục vụ đúng trang đó qua `127.0.0.1` (vẫn tự chứa, không tài nguyên ngoài) và bơm thay đổi vào bằng SSE (`GET /events`):
+
+- **Hai nguồn thay đổi, hai cơ chế bắt.** (1) Code save → `watchRepo` sẵn có (chokidar → re-index tăng dần → reconcile anchor); đường dẫn thô của sự kiện fs đi kèm chu kỳ thành danh sách "nóng" — nhờ đó sửa comment-only vẫn phát sáng dù snapshot không đổi cấu trúc. (2) Memory ghi từ **process khác** (MCP server của agent, terminal thứ hai) → poll `PRAGMA data_version` — chỉ nhảy khi connection *khác* commit, nên write của chính server không tự kích lại; hot id suy ra bằng diff row cũ/mới.
+- **Giao thức cố tình đơn giản:** mỗi frame = snapshot đầy đủ + `hot{files,mems}`. Client reconcile tại chỗ (`applyData`): node sống sót giữ nguyên toạ độ (bản đồ không nhảy dưới mắt người đọc), node mới nở ra + gợn sóng, node bị xoá mờ dần rồi rời model, node nóng phát sáng ~8s rồi nguội; ghi chú flip fresh↔needs_review chớp ngay trên bản đồ. EventSource tự reconnect; frame nào cũng là chân lý đầy đủ nên áp lại là xong — idempotent.
+- **Chống nuốt sự kiện lúc khởi động:** server đợi chokidar `ready` (initial scan xong) rồi mới nhận khách — cú save ngay sau khi bật server không bị rơi.
+
 ## 12. Mục tiêu hiệu năng
 
 | Thao tác | Mục tiêu | Ghi chú |

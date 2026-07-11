@@ -54,8 +54,9 @@ node /path/to/haido/dist/cli.js install claude-code \
 |---|---|
 | **Hooks** (Claude Code) | Auto-inject: project map at session start; anchored notes per touched file; drift warnings right after an edit invalidates a note |
 | **MCP tools** | `recall` · `remember` · `find_related` · `map_overview` · `stale_memories` · `reanchor` |
-| **CLI** | `init · index [--watch] · serve · install · remember · recall · related · overview · stale · reanchor · export · import · viz · doctor` |
+| **CLI** | `init · index [--watch] · serve · install · remember · recall · related · overview · stale · reanchor · export · import · viz [--live] · doctor` |
 | **`haido viz`** | A self-contained interactive map (one HTML file, zero deps): files colored by directory, import/co-change links with spotlight-on-hover, memories as diamond satellites tethered to their anchors, 2D reading view + 3D showcase mode |
+| **`haido viz --live`** | The same map as a living thing, served on 127.0.0.1: new files bloom in as they appear, the file being edited glows and cools down, notes flash yellow the moment an edit makes them drift — watch your agent work in real time |
 | **Memory pack** | `export/import --pack`: one markdown file per note, committed to git — knowledge travels with the repo and is reviewed in PRs; recorded fingerprints carry staleness across machines |
 
 ## How staleness works (the core trick)
