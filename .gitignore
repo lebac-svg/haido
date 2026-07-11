@@ -11,3 +11,6 @@ coverage/
 
 # probe runtime output (schema excerpts live in FINDINGS.md)
 experiments/hooks-probe/log.jsonl
+
+# haido installer backups (local only)
+*.bak-haido
