@@ -149,8 +149,7 @@ function resolveAnchor(db: Db, target: AnchorTarget): ResolvedAnchor {
          WHERE s.qname = ? AND s.deleted_at IS NULL`,
       )
       .get(target.symbol) as
-      | { qname: string; body_hash: string; norm_text: string | null; path: string }
-      | undefined;
+      { qname: string; body_hash: string; norm_text: string | null; path: string } | undefined;
     if (!row) {
       const tail = target.symbol.includes('#')
         ? (target.symbol.split('#').pop() ?? target.symbol)
@@ -175,9 +174,7 @@ function resolveAnchor(db: Db, target: AnchorTarget): ResolvedAnchor {
   }
   const row = db
     .prepare(`SELECT path, norm_hash, norm_text FROM files WHERE path = ? AND deleted_at IS NULL`)
-    .get(target.file) as
-    | { path: string; norm_hash: string; norm_text: string | null }
-    | undefined;
+    .get(target.file) as { path: string; norm_hash: string; norm_text: string | null } | undefined;
   if (!row) throw new Error(`unknown file '${target.file}' (repo-relative POSIX path expected)`);
   return {
     kind: 'file',

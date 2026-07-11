@@ -143,8 +143,7 @@ export function reconcileAnchors(db: Db, nowInput?: number): StalenessReport {
     let current: { hash: string; snap: string | null; path: string } | undefined;
     if (a.target_kind === 'symbol') {
       current = symbolByQname.get(a.qname) as
-        | { hash: string; snap: string | null; path: string }
-        | undefined;
+        { hash: string; snap: string | null; path: string } | undefined;
     } else {
       const f = fileByPath.get(a.qname) as { hash: string; snap: string | null } | undefined;
       current = f ? { hash: f.hash, snap: f.snap, path: a.qname } : undefined;
@@ -174,9 +173,11 @@ export function reconcileAnchors(db: Db, nowInput?: number): StalenessReport {
     // Target vanished — look for an identical twin (file rename / symbol move).
     const twins =
       a.target_kind === 'symbol'
-        ? (symbolTwins.all(a.hash_at_link) as Array<
-            { qname: string; snap: string | null; path: string }
-          >)
+        ? (symbolTwins.all(a.hash_at_link) as Array<{
+            qname: string;
+            snap: string | null;
+            path: string;
+          }>)
         : (fileTwins.all(a.hash_at_link) as Array<{ path: string; snap: string | null }>).map(
             (f) => ({ qname: f.path, snap: f.snap, path: f.path }),
           );

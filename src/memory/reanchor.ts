@@ -33,8 +33,7 @@ export function confirmMemory(db: Db, memoryId: string, now = Date.now()): void 
       let cur: { hash: string; snap: string | null; path: string } | undefined;
       if (a.target_kind === 'symbol') {
         cur = currentSymbol.get(a.qname) as
-          | { hash: string; snap: string | null; path: string }
-          | undefined;
+          { hash: string; snap: string | null; path: string } | undefined;
       } else {
         const f = currentFile.get(a.qname) as { hash: string; snap: string | null } | undefined;
         cur = f ? { hash: f.hash, snap: f.snap, path: a.qname } : undefined;
@@ -71,8 +70,7 @@ export function moveAnchor(
          WHERE s.qname = ? AND s.deleted_at IS NULL`,
       )
       .get(to.symbol) as
-      | { qname: string; body_hash: string; norm_text: string | null; path: string }
-      | undefined;
+      { qname: string; body_hash: string; norm_text: string | null; path: string } | undefined;
     if (!target) throw new Error(`unknown symbol '${to.symbol}'`);
     db.prepare(
       `UPDATE anchors SET target_kind = 'symbol', qname = ?, path = ?, hash_at_link = ?,
