@@ -109,6 +109,43 @@ describe('indexRepo on ts-mini', () => {
     expect(project.lang).toBe('text');
   });
 
+  it('indexes extensionless text files by name so notes can anchor to .gitignore/Dockerfile/LICENSE', async () => {
+    writeFileSync(path.join(tmp, '.gitignore'), 'node_modules/\ndist/\n');
+    writeFileSync(path.join(tmp, '.gitattributes'), '* text=auto eol=lf\n');
+    writeFileSync(path.join(tmp, 'Dockerfile'), 'FROM node:22-alpine\nCMD ["node", "cli.js"]\n');
+    writeFileSync(path.join(tmp, 'LICENSE'), 'MIT License\n');
+    const r = await indexRepo({ root: tmp, db });
+    expect(r.filesIndexed).toBe(8); // 4 fixture files + the 4 above
+
+    const rows = db
+      .prepare(
+        `SELECT path, lang FROM files WHERE path IN ('.gitignore', '.gitattributes', 'Dockerfile', 'LICENSE') ORDER BY path`,
+      )
+      .all() as Array<{ path: string; lang: string }>;
+    expect(rows).toEqual([
+      { path: '.gitattributes', lang: 'text' },
+      { path: '.gitignore', lang: 'text' },
+      { path: 'Dockerfile', lang: 'text' },
+      { path: 'LICENSE', lang: 'text' },
+    ]);
+
+    // matched case-insensitively, and the snapshot keeps the content anchorable
+    const docker = db.prepare(`SELECT norm_text FROM files WHERE path = 'Dockerfile'`).get() as {
+      norm_text: string;
+    };
+    expect(docker.norm_text).toContain('FROM node:22-alpine');
+  });
+
+  it('does NOT index secret-bearing files that have no extension', async () => {
+    writeFileSync(path.join(tmp, '.env'), 'API_KEY=super-secret\n');
+    writeFileSync(path.join(tmp, '.npmrc'), '//registry.npmjs.org/:_authToken=deadbeef\n');
+    await indexRepo({ root: tmp, db });
+    const leaked = db
+      .prepare(`SELECT count(*) AS c FROM files WHERE path IN ('.env', '.npmrc')`)
+      .get() as { c: number };
+    expect(leaked.c).toBe(0); // indexing snapshots content — these must stay out
+  });
+
   it('haido.toml exclude globs keep junk out of the index', async () => {
     const { mkdirSync } = await import('node:fs');
     mkdirSync(path.join(tmp, 'gen'));

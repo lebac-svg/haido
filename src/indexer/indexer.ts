@@ -44,6 +44,32 @@ const TEXT_EXTS = new Set([
   '.gd', // Godot/GDScript: file-level anchors until a verified grammar is added
   '.godot', // Godot project settings are text and valid decision anchors
 ]);
+/**
+ * Text files with NO extension, matched by exact lowercased filename — `path.extname`
+ * returns '' for '.gitignore' and 'Dockerfile' alike, so the ext allowlist above can
+ * never reach them. They carry real decisions (what git ignores, how the image builds,
+ * which licence ships) and were invisible to the index, so notes could not anchor there.
+ *
+ * Deliberately NOT here: '.env', '.npmrc' and friends. Indexing snapshots file content
+ * into the local database — a name only belongs on this list if it never holds secrets.
+ */
+const TEXT_FILENAMES = new Set([
+  '.gitignore',
+  '.gitattributes',
+  '.dockerignore',
+  '.npmignore',
+  '.prettierignore',
+  '.eslintignore',
+  '.editorconfig',
+  '.nvmrc',
+  '.prettierrc',
+  'dockerfile',
+  'makefile',
+  'license',
+  'licence',
+  'codeowners',
+  'procfile',
+]);
 const TEXT_EXCLUDED_FILES = new Set(['package-lock.json']);
 
 interface DiskFile {
@@ -290,7 +316,8 @@ function scanDisk(root: string, filter: PathFilter, maxBytes = MAX_FILE_BYTES): 
       if (!entry.isFile()) continue;
       const ext = path.extname(name).toLowerCase();
       const lang: LangId | 'text' | undefined =
-        EXT_TO_LANG[ext] ?? (TEXT_EXTS.has(ext) ? 'text' : undefined);
+        EXT_TO_LANG[ext] ??
+        (TEXT_EXTS.has(ext) || TEXT_FILENAMES.has(name.toLowerCase()) ? 'text' : undefined);
       if (!lang) continue;
       if (lang === 'text' && (TEXT_EXCLUDED_FILES.has(name) || name.endsWith('.lock'))) continue;
       if (name.endsWith('.d.ts') || name.includes('.min.')) continue;
