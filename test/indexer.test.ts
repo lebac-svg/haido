@@ -89,6 +89,26 @@ describe('indexRepo on ts-mini', () => {
     expect(after.norm_hash).toBe(row.norm_hash);
   });
 
+  it('indexes GDScript files at file level so Godot projects appear on the live map', async () => {
+    writeFileSync(
+      path.join(tmp, 'player.gd'),
+      'extends CharacterBody2D\n\nfunc _physics_process(delta):\n\tposition.x += delta\n',
+    );
+    writeFileSync(path.join(tmp, 'project.godot'), 'config_version=5\n');
+    const r = await indexRepo({ root: tmp, db });
+    expect(r.filesIndexed).toBe(6);
+    const row = db.prepare("SELECT lang, norm_text FROM files WHERE path = 'player.gd'").get() as {
+      lang: string;
+      norm_text: string;
+    };
+    expect(row.lang).toBe('text');
+    expect(row.norm_text).toContain('func _physics_process');
+    const project = db.prepare("SELECT lang FROM files WHERE path = 'project.godot'").get() as {
+      lang: string;
+    };
+    expect(project.lang).toBe('text');
+  });
+
   it('haido.toml exclude globs keep junk out of the index', async () => {
     const { mkdirSync } = await import('node:fs');
     mkdirSync(path.join(tmp, 'gen'));
