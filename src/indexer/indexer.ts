@@ -33,7 +33,17 @@ const MAX_FILE_BYTES = 1_500_000;
  * so memories can anchor to specs/configs too. Discovered by self-hosting dogfood:
  * the bootstrap pack anchors to docs/*.md, which a code-only index reported missing.
  */
-const TEXT_EXTS = new Set(['.md', '.markdown', '.txt', '.json', '.yaml', '.yml', '.toml']);
+const TEXT_EXTS = new Set([
+  '.md',
+  '.markdown',
+  '.txt',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.gd', // Godot/GDScript: file-level anchors until a verified grammar is added
+  '.godot', // Godot project settings are text and valid decision anchors
+]);
 const TEXT_EXCLUDED_FILES = new Set(['package-lock.json']);
 
 interface DiskFile {

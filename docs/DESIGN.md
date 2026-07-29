@@ -39,7 +39,8 @@ Five design principles:
 - **Indexer:** tree-sitter (WASM, grammars from `@vscode/tree-sitter-wasm`) extracts
   functions/classes/methods/exported consts/types for TS/TSX/JS + Python. Incremental:
   mtime+size fast path, then content hash, then parse. Text knowledge files (md/json/yaml/toml)
-  are indexed at file level so notes can anchor to specs. **Normalized hashing** drops comments
+  and GDScript are indexed at file level so Godot code remains visible and anchorable without
+  pretending to have symbol-level parsing. **Normalized hashing** drops comments
   and whitespace: formatting never changes a fingerprint; any token change does. A class hash
   covers its member bodies (sensitive-over-silent policy).
 - **Co-change miner:** bounded-window rebuild from `git log` — file pairs that changed

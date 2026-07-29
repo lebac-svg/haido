@@ -161,7 +161,7 @@ budget_tokens = 800          # hook injection budget per file
 lang = "en"                  # output language: "en" (default) | "vi"
 ```
 
-TypeScript/TSX/JS + Python are symbol-indexed; markdown/JSON/YAML/TOML are file-level
+TypeScript/TSX/JS + Python are symbol-indexed; markdown/JSON/YAML/TOML, GDScript, and Godot project settings are file-level
 anchor targets (yes, you can anchor decisions to your specs). 100% local: no network
 calls, no telemetry.
 
