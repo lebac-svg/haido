@@ -8,8 +8,8 @@ created: 2026-07-29
 author: human:daiba + agent:claude
 ---
 
-# `diff.test.ts` cần timeout 30s: nó làm I/O thật, 5s mặc định không đủ trên CI Windows
+# `diff.test.ts` đặt timeout cho CẢ FILE, vì sửa từng test chỉ đẩy lỗi sang test bên cạnh
 
-Test `schema migration v1 → v2` chạy mkdtemp + mở better-sqlite3 + migrate. Đo được ~8s trên runner Windows nguội. Ngày 29/07/2026 nó đỏ trên `windows-latest, 22` nhưng xanh trên `windows-latest, 24` cùng lần chạy, và xanh cả 4/4 ở một PR khác chứa đúng commit ấy — sai ngân sách thời gian, không sai assertion.
+Mọi test trong file (trừ nhóm `tokenDiff` thuần hàm) làm I/O thật: mkdtemp, mở và migrate better-sqlite3, chạy một pass index. Trên runner Windows nguội đo được 8,0s cho test migration và 4,5s cho test drift, so với mặc định 5s của vitest.
 
-**Why:** CI đỏ trong khi máy mình xanh khiến người ta đi tìm lỗi trong thay đổi của chính mình; đã mất một vòng kéo log, đối chiếu lịch sử run trên main và so hai runner mới kết luận được. Đừng hạ con số 30s xuống cho "gọn": nó là ngân sách đo được trên máy chậm nhất, không phải số tuỳ tiện.
+**Why:** ngày 29/07/2026 đã nới timeout cho riêng test migration; lần chạy CI kế tiếp đỏ lại đúng file đó nhưng ở test drift — cái vốn nằm sát mép 5s. Sửa từng test là đuổi theo triệu chứng. `vi.setConfig` cấp file bao luôn mọi test viết sau này. Đừng hạ 30s xuống cho "gọn": đó là ngân sách đo trên máy chậm nhất.

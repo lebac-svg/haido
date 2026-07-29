@@ -3,7 +3,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatStale } from '../src/cli/format.js';
 import { buildVizJson } from '../src/viz/data.js';
 import { openDb } from '../src/core/db.js';
@@ -12,6 +12,14 @@ import { indexRepo } from '../src/indexer/indexer.js';
 import { tokenDiff } from '../src/memory/diff.js';
 import { listNeedsReview, remember } from '../src/memory/store.js';
 import { reconcileAnchors } from '../src/memory/staleness.js';
+
+// Timeout is set for the WHOLE file, not per test: everything here past the tokenDiff
+// unit cases does real work — mkdtemp, better-sqlite3 open/migrate, a full index pass.
+// A cold Windows CI runner measured 8.0s for the migration case and 4.5s for the drift
+// case against vitest's 5s default; both went red on windows/node22 while passing on
+// windows/node24 in the same run. Fixing one test at a time just moves the failure to
+// its neighbour — that already happened once. The budget was wrong, not the assertions.
+vi.setConfig({ testTimeout: 30_000 });
 
 describe('tokenDiff', () => {
   it('renders a small change inside a long body with collapsed context', () => {
@@ -125,10 +133,7 @@ describe('schema migration v1 → v2', () => {
     expect(version.value).toBe('2');
     db.close();
     rmSync(tmp, { recursive: true, force: true });
-    // Real I/O (mkdtemp + better-sqlite3 open + migrate) on a cold Windows CI runner has
-    // measured 8s against vitest's 5s default — green on windows/node24, red on node22 in
-    // the same run. The budget was wrong, not the assertions.
-  }, 30_000);
+  });
 
   it('re-parses an unchanged file whose norm_text is NULL (pre-v2 row)', async () => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), 'haido-heal-'));
