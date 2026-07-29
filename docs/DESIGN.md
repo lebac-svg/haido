@@ -40,7 +40,10 @@ Five design principles:
   functions/classes/methods/exported consts/types for TS/TSX/JS + Python. Incremental:
   mtime+size fast path, then content hash, then parse. Text knowledge files (md/json/yaml/toml)
   and GDScript are indexed at file level so Godot code remains visible and anchorable without
-  pretending to have symbol-level parsing. **Normalized hashing** drops comments
+  pretending to have symbol-level parsing. Extensionless files (`.gitignore`, `Dockerfile`,
+  `LICENSE`) match on an exact-name allowlist instead, since they have no extension to match;
+  secret-bearing names are excluded by construction because indexing snapshots content into the
+  local db. **Normalized hashing** drops comments
   and whitespace: formatting never changes a fingerprint; any token change does. A class hash
   covers its member bodies (sensitive-over-silent policy).
 - **Co-change miner:** bounded-window rebuild from `git log` — file pairs that changed
