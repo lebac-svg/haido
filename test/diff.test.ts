@@ -125,7 +125,10 @@ describe('schema migration v1 → v2', () => {
     expect(version.value).toBe('2');
     db.close();
     rmSync(tmp, { recursive: true, force: true });
-  });
+    // Real I/O (mkdtemp + better-sqlite3 open + migrate) on a cold Windows CI runner has
+    // measured 8s against vitest's 5s default — green on windows/node24, red on node22 in
+    // the same run. The budget was wrong, not the assertions.
+  }, 30_000);
 
   it('re-parses an unchanged file whose norm_text is NULL (pre-v2 row)', async () => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), 'haido-heal-'));
