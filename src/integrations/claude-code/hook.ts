@@ -103,8 +103,16 @@ export async function runHook(
         const touched = state.touched ?? [];
         if (state.stopNudged || touched.length < STOP_NUDGE_MIN_TOUCHED) return null;
         const since = state.startedAt ?? Date.now();
+        // created_at alone is not enough: a pack-imported note carries the frontmatter DATE
+        // (midnight), which is always before startedAt — so the ritual of writing
+        // docs/memory/*.md then `import --pack` looked like recording nothing. updated_at is
+        // stamped with wall-clock on every real write. The automatic staleness rollup
+        // deliberately leaves updated_at alone (see staleness.ts), so a plain index pass can
+        // never silence this nudge; an explicit reanchor does, and that IS engaging with memory.
         const written = (
-          db.prepare(`SELECT count(*) AS c FROM memories WHERE created_at >= ?`).get(since) as {
+          db
+            .prepare(`SELECT count(*) AS c FROM memories WHERE created_at >= ? OR updated_at >= ?`)
+            .get(since, since) as {
             c: number;
           }
         ).c;

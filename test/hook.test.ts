@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDb } from '../src/core/db.js';
 import { dbPath, ensureWorkspace } from '../src/core/workspace.js';
 import { indexRepo } from '../src/indexer/indexer.js';
+import { importPack } from '../src/memory/pack.js';
 import { remember } from '../src/memory/store.js';
 import { runHook } from '../src/integrations/claude-code/hook.js';
 
@@ -139,6 +140,45 @@ describe('claude-code hook runner', () => {
       author: 'test',
     });
     db.close();
+    expect(await runHook('stop', tmp, payload({}))).toBeNull();
+  });
+
+  it('stop stays silent when the session recorded through the memory pack', async () => {
+    const edit = (file: string): string =>
+      payload({ tool_name: 'Edit', tool_input: { file_path: path.join(tmp, file) } });
+    await runHook('post-tool', tmp, edit('src/board.ts'));
+    await runHook('post-tool', tmp, edit('src/utils.ts'));
+
+    // The ritual the docs prescribe: write docs/memory/*.md by hand, then `import --pack`.
+    // A pack carries a DATE, so created_at lands at midnight — always before startedAt.
+    // Counting created_at alone nags a session that did exactly what it was told to do.
+    const packDir = path.join(tmp, 'pack');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(
+      path.join(packDir, 'm-x1-through-the-pack.md'),
+      [
+        '---',
+        'id: m_x1',
+        'type: decision',
+        'status: fresh',
+        'anchors:',
+        "  - { kind: file, path: 'src/board.ts' }",
+        'created: 2020-01-01',
+        'author: test',
+        '---',
+        '',
+        '# Recorded through the pack, not the remember tool',
+        '',
+        'The note is written now but dated long ago.',
+        '',
+        '**Why:** proves the nudge follows the write, not the frontmatter date.',
+        '',
+      ].join('\n'),
+    );
+    const db = openDb(dbPath(tmp));
+    expect(importPack(db, packDir).imported).toBe(1);
+    db.close();
+
     expect(await runHook('stop', tmp, payload({}))).toBeNull();
   });
 
